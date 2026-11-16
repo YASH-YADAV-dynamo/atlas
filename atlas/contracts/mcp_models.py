@@ -48,6 +48,9 @@ CHOICE_NAME_LENGTH = 40
 SUMMARY_LENGTH = 200
 
 Summary = Annotated[str, Field(max_length=SUMMARY_LENGTH)]
+MAX_NOTES = 3
+NOTE_LENGTH = 80
+Notes = Annotated[tuple[Annotated[str, Field(max_length=NOTE_LENGTH)], ...], Field(max_length=MAX_NOTES)]
 
 
 def tool_text(result: BaseModel) -> str:
@@ -78,8 +81,9 @@ class RunStatus(StrEnum):
 
 
 class FindSkillsInput(Frozen):
-    site: Site
-    goal_text: GoalText
+    # No site: every site of the key (at most MAX_SITES). No goal_text: the most reliable goals.
+    site: Site | None = None
+    goal_text: GoalText | None = None
 
 
 class SkillInfo(Frozen):
@@ -91,11 +95,13 @@ class SkillInfo(Frozen):
     reliability: Annotated[float, Field(gt=0, lt=1)]
     est_steps: Annotated[int, Field(ge=1)] | None = None  # from the current page, when known
     compressed: bool = False  # its route from the current page rides a compressed skill
+    site: Site | None = None  # set when the search covered several sites
 
 
 class FindSkillsOutput(Frozen):
     skills: Annotated[tuple[SkillInfo, ...], Field(max_length=MAX_SKILLS)] = ()
     truncated: bool = False
+    notes: Notes = ()  # corrections the server made to the input
 
 
 # ---- atlas_run / atlas_act --------------------------------------------------------------
@@ -214,6 +220,7 @@ class PlanToolInput(Frozen):
     goal_text: GoalText
     params: Params = Field(default_factory=dict)
     replay: Literal["steps", "script"] = "steps"  # "script": one Playwright function replaces route
+    kind: GoalKind | None = None  # accepted for compatibility; "act" switches reworded matches off
 
 
 class PlanToolOutput(Frozen):
@@ -231,6 +238,7 @@ class PlanToolOutput(Frozen):
     match: GoalMatchKind | None = None  # how the goal resolved (exact, same_words, similar)
     goal: GoalText | None = None  # the stored goal when the wording differed: reuse it
     params: Params | None = None  # values read out of the goal text
+    notes: Notes = ()  # corrections the server made to the input
 
 
 class ReportToolInput(Frozen):
@@ -255,7 +263,7 @@ MAX_REPORT_STEPS = 12
 
 
 class ReportStep(Frozen):
-    """One executed step of a batch: put the form fills in the action that submits them."""
+    """One executed step of a batch; form fills go in the action that submits."""
 
     action: Action
     to: LenientSnapshot
@@ -264,10 +272,10 @@ class ReportStep(Frozen):
 
 
 class ReportInput(Frozen):
-    """Exactly one of: action (one step), steps (a batch), plan_id (a replay outcome)."""
+    """One of: action (one step), steps (a batch), plan_id (replay)."""
 
     site: Site
-    ok: bool
+    ok: bool | None = None  # default: a batch is ok when all steps are, a replay when done >= route
     from_state: StateId | None = None
     action: Action | None = None
     to_snapshot_summary: LenientSnapshot | None = None
@@ -309,7 +317,7 @@ class ReportInput(Frozen):
             from_state=self.from_state,
             action=self.action,
             to_snapshot_summary=self.to_snapshot_summary,
-            ok=self.ok,
+            ok=True if self.ok is None else self.ok,
             ms=self.ms,
             event_id=self.event_id,
             expect_state=self.expect_state,
@@ -329,6 +337,7 @@ class ReportToolOutput(Frozen):
     blocked: str | None = None  # a blocked or error page: not learned
     learned: Annotated[int, Field(ge=0)] | None = None  # steps stored (batch and replay forms)
     goal: GoalText | None = None  # the goal key stored
+    notes: Notes = ()  # corrections the server made to the input
 
 
 # ---- resources (read-only context a client can attach) ----------------------------------

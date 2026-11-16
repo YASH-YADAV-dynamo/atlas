@@ -90,6 +90,7 @@ class IssuedKey:
     api_key: str
     namespace: str
     tenant_id: str
+    note: str = ""  # set when the same address already created keys in the last 24 hours
 
 
 def _now() -> datetime:
@@ -200,7 +201,10 @@ class KeyRegistry:
                 1 for r in self._tenants.values() if r.get("ip_hash") == ip_hash and r["created_at"] > cutoff
             )
             if recent >= self._settings.tenant_keys_per_ip_day:
-                raise TenantLimitError("key creation limit reached for this address; try again tomorrow")
+                raise TenantLimitError(
+                    "key creation limit reached for this address; try again tomorrow. "
+                    "If Atlas is already connected in this client, keep using that key."
+                )
             api_key = KEY_PREFIX + secrets.token_urlsafe(32)
             tenant_id = secrets.token_hex(8)
             namespace = NAMESPACE_PREFIX + tenant_id
@@ -215,7 +219,13 @@ class KeyRegistry:
                 "events": 0,
             }
             self._save()
-        return IssuedKey(api_key=api_key, namespace=namespace, tenant_id=tenant_id)
+        note = (
+            f"This address already created {recent} key(s) today. A new key has an empty map. "
+            "If Atlas is already connected in this client, keep using that key."
+            if recent
+            else ""
+        )
+        return IssuedKey(api_key=api_key, namespace=namespace, tenant_id=tenant_id, note=note)
 
     def tenant_count(self) -> int:
         with self._lock:

@@ -236,6 +236,16 @@ def _link_goal(store: SessionStore, ns: str, request: FinishRequest, transition:
     return key
 
 
+def resolve_ok(request: FinishRequest, plan: IssuedPlan | None) -> bool:
+    """The outcome when the caller did not say: every reported step ok, and a replay ok when
+    `done` covers the issued route (an expired plan, or no `done`, counts as ok)."""
+    if request.ok is not None:
+        return request.ok
+    steps_ok = all(step.ok for step in request.steps)
+    replay_ok = plan is None or request.done is None or request.done >= len(plan.route)
+    return steps_ok and replay_ok
+
+
 def _credit_replay(
     store: SessionStore,
     clock: Clock,
@@ -326,7 +336,7 @@ def _explore(
             event_id=f"{base}-{index}",
             goal_text=request.goal_text,
             params=request.params,
-            goal_reached=closing and request.goal_reached and request.ok and step.ok,
+            goal_reached=bool(closing and request.goal_reached and request.ok and step.ok),
             run_id=base,
             kind=request.kind,
         )
@@ -359,6 +369,8 @@ def finish(
     run = _Run(state=request.from_state)
     base = (request.event_id or uuid.uuid4().hex[:24])[:_MAX_EVENT_BASE]
     plan = issued.get(ns, request.site, request.plan_id) if request.plan_id else None
+    if request.ok is None:  # an explicit ok always wins; otherwise it follows what was reported
+        request = request.model_copy(update={"ok": resolve_ok(request, plan)})
     if request.plan_id and plan is None:
         log_event("finish_unknown_plan")  # expired or never issued: nothing to credit
     if plan is not None:

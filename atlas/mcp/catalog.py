@@ -150,7 +150,9 @@ def listed_description(spec: ToolSpec, mode: Mode) -> str:
 def listed_schema(spec: ToolSpec, mode: Mode) -> dict[str, Any]:
     if not _presented(spec, mode):
         return spec.input_model.model_json_schema()
-    return _compact(spec.input_model.model_json_schema())
+    compact = _compact(spec.input_model.model_json_schema())
+    compact.setdefault("required", [])  # a tool whose arguments are all optional still lists none
+    return compact
 
 
 def listed_tokens(spec: ToolSpec, mode: Mode) -> int:

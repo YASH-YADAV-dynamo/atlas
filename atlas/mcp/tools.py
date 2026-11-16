@@ -176,37 +176,49 @@ class AtlasTools:
     # ---- atlas_find_skills --------------------------------------------------------------
 
     def find_skills(self, request: m.FindSkillsInput) -> m.FindSkillsOutput:
-        here = (
-            locate(self._store, self._ns, request.site, self._driver.snapshot()).state_id
-            if self._driver
-            else None
-        )
-        ranked: list[tuple[int, int, int, m.SkillInfo]] = []
+        if request.site is not None:
+            sites = [request.site]
+        else:  # no site named: every site of this key (at most MAX_SITES)
+            listed = cast(SiteStore, self._store).list_sites(self._ns)
+            sites = [name for name, _, _ in listed][: m.MAX_SITES]
+        several = request.site is None
+        wanted = request.goal_text or ""
+        ranked: list[tuple[float, int, int, int, m.SkillInfo]] = []
         # Content words only (stopwords and retrieval verbs out), at least half of the query's
         # shared, so "give a customer their money back" offers nothing unrelated (SHIP_PLAN A5).
-        for goal in visible_goals(self._store.list_goals(self._ns, request.site)):
-            overlap = skill_match(request.goal_text, goal.text)
-            if overlap == 0:
-                continue
-            words = content_words(goal.text)
-            transitions = self._goal_transitions(goal)
-            if overlap == 0 or not transitions:
-                continue
-            slots = tuple(dict.fromkeys(_SLOT.findall(goal.text)))
-            rates = [reliability(t.ok, t.fail) for t in transitions]
-            info = m.SkillInfo(
-                skill_id=f"goal:{goal.id}",
-                name=goal.text,
-                params=slots,
-                reliability=sum(rates) / len(rates),
+        # No goal_text: every goal qualifies and the most reliable come first.
+        for site in sites:
+            here = (
+                locate(self._store, self._ns, site, self._driver.snapshot()).state_id
+                if self._driver
+                else None
             )
-            if here is not None:
-                info = self._from_here(info, here, transitions)
-            ranked.append((-overlap, len(words), goal.id, info))
-        if not ranked:
+            for goal in visible_goals(self._store.list_goals(self._ns, site)):
+                overlap = skill_match(wanted, goal.text) if wanted else 1
+                if overlap == 0:
+                    continue
+                words = content_words(goal.text)
+                transitions = self._goal_transitions(goal)
+                if not transitions:
+                    continue
+                slots = tuple(dict.fromkeys(_SLOT.findall(goal.text)))
+                rates = [reliability(t.ok, t.fail) for t in transitions]
+                score = sum(rates) / len(rates)
+                info = m.SkillInfo(
+                    skill_id=f"goal:{goal.id}",
+                    name=goal.text,
+                    params=slots,
+                    reliability=score,
+                    site=site if several else None,
+                )
+                if here is not None:
+                    info = self._from_here(info, here, transitions)
+                rank = -score if not wanted else 0.0
+                ranked.append((rank, -overlap, len(words), goal.id, info))
+        if not ranked and request.site is not None:
             self._check_site(request.site)
-        ranked.sort(key=lambda row: row[:3])
-        skills = tuple(row[3] for row in ranked[: m.MAX_SKILLS])
+        ranked.sort(key=lambda row: row[:4])
+        skills = tuple(row[4] for row in ranked[: m.MAX_SKILLS])
         return enforce_budget(m.FindSkillsOutput(skills=skills, truncated=len(ranked) > m.MAX_SKILLS))
 
     def _from_here(self, info: m.SkillInfo, here: int, targets: list[Transition]) -> m.SkillInfo:

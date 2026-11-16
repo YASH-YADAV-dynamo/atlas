@@ -140,7 +140,7 @@ class FinishRequest(Frozen):
     from_state: StateId | None = None
     steps: Annotated[tuple[FinishStep, ...], Field(max_length=MAX_FINISH_STEPS)] = ()
     to_snapshot: LenientSnapshot | None = None
-    ok: bool
+    ok: bool | None = None  # absent: all steps ok (batch), done >= route length (replay), else true
     ms: Annotated[int, Field(ge=0, le=600_000)] = 0  # total time of the replayed steps
     goal_text: GoalText | None = None
     params: Params = Field(default_factory=dict)

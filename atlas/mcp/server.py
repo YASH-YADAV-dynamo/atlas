@@ -24,9 +24,19 @@ from mcp.server.transport_security import TransportSecuritySettings
 from pydantic import BaseModel, ValidationError
 
 from atlas.contracts.errors import AtlasError, ToolUnavailableError, UnauthorizedError
-from atlas.contracts.mcp_models import SITE_CHANGES_URI, SITES_URI, Mode, ToolSpec, tool_text, tools_for
+from atlas.contracts.mcp_models import (
+    MCP_RESPONSE_TOKEN_BUDGET,
+    SITE_CHANGES_URI,
+    SITES_URI,
+    Mode,
+    ToolSpec,
+    response_tokens,
+    tool_text,
+    tools_for,
+)
 from atlas.contracts.ports import Clock, MapStore
 from atlas.mcp.catalog import SERVER_INSTRUCTIONS, listed_description, listed_schema
+from atlas.mcp.coerce import coerce
 from atlas.mcp.keys import WRITE_TOOLS, KeyRegistry, Principal, RateLimiter, rate_key
 from atlas.mcp.resources import changes_resource, sites_resource
 from atlas.mcp.tools import AtlasTools
@@ -51,37 +61,36 @@ def _error(message: str) -> types.CallToolResult:
     return types.CallToolResult(content=[types.TextContent(type="text", text=message[:300])], is_error=True)
 
 
-def _one_source(step: dict[str, Any], params: dict[str, Any]) -> None:
-    """Agents often send both `param` and `value`; keep the param when it is a known task
-    parameter (the value is just its binding), else keep the literal value."""
-    if step.get("param") is not None and step.get("value") is not None:
-        if step["param"] in params:
-            step["value"] = None
-        else:
-            step["param"] = None
+_EXPECTED: dict[str, str] = {
+    "atlas_plan": "atlas_plan {site, goal_text, params?, snapshot_summary:{url,title}}",
+    "atlas_report": "atlas_report {site, from_state, steps:[{action:{kind,locator:{role,name}},"
+    "to:{url,title}}], goal_text?, goal_reached?} or {site, plan_id, done?}",
+    "atlas_find_skills": "atlas_find_skills {site?, goal_text?}",
+    "atlas_recall": "atlas_recall {entity_type, key}",
+}
+_MESSAGE_LIMIT = 300
 
 
-def _normalise_arguments(arguments: dict[str, Any]) -> dict[str, Any]:
-    action = arguments.get("action")
-    if not isinstance(action, dict):
-        return arguments
-    params = arguments.get("params")
-    params = params if isinstance(params, dict) else {}
-    action = dict(action)
-    _one_source(action, params)
-    fills = action.get("fills")
-    if isinstance(fills, list):
-        action["fills"] = [dict(f) for f in fills]
-        for fill in action["fills"]:
-            if isinstance(fill, dict):
-                _one_source(fill, params)
-    return {**arguments, "action": action}
-
-
-def _validation_message(error: ValidationError) -> str:
+def _validation_message(error: ValidationError, tool: str | None = None) -> str:
     first = error.errors()[0]
     where = ".".join(str(part) for part in first["loc"]) or "arguments"
-    return f"invalid {where}: {first['msg']}"
+    message = f"invalid {where}: {first['msg']}"
+    hint = _EXPECTED.get(tool or "")
+    if hint is None:
+        return message[:_MESSAGE_LIMIT]
+    suffix = f" Expected: {hint}"
+    return message[: _MESSAGE_LIMIT - len(suffix)] + suffix
+
+
+def _with_notes(result: BaseModel, notes: tuple[str, ...]) -> BaseModel:
+    """The result carrying the corrections made to the input, as many as still fit the budget."""
+    if "notes" not in type(result).model_fields:
+        return result
+    for count in range(len(notes), 0, -1):
+        candidate = result.model_copy(update={"notes": notes[:count]})
+        if response_tokens(candidate) <= MCP_RESPONSE_TOKEN_BUDGET:
+            return candidate
+    return result
 
 
 def build_server(
@@ -127,10 +136,11 @@ def build_server(
         spec = specs.get(params.name)
         if spec is None:
             return _error(f"unknown tool {params.name[:60]}; available: {', '.join(specs)}")
+        arguments, notes = coerce(spec.name, dict(params.arguments or {}))
         try:
-            request = spec.input_model.model_validate(_normalise_arguments(dict(params.arguments or {})))
+            request = spec.input_model.model_validate(arguments)
         except ValidationError as error:
-            return _error(_validation_message(error))
+            return _error(_validation_message(error, spec.name))
         try:
             session_tools, principal = tools_of(ctx)
             writes = spec.name in WRITE_TOOLS
@@ -152,7 +162,10 @@ def build_server(
                 for _ in range(max(1, getattr(result, "learned", None) or 1)):
                     quota.note_event(principal)
         except (AtlasError, ValidationError) as error:
-            return _error(str(error) if isinstance(error, AtlasError) else _validation_message(error))
+            text = str(error) if isinstance(error, AtlasError) else _validation_message(error, spec.name)
+            return _error(text)
+        if notes:
+            result = _with_notes(result, notes)
         return types.CallToolResult(content=[types.TextContent(type="text", text=tool_text(result))])
 
     async def list_resources(

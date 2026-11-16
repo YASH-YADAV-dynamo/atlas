@@ -137,12 +137,15 @@ def create_app(
     def post_keys(request: Request) -> dict[str, object]:
         issued = registry.issue(client_ip(request))
         log_event("tenant_created", tenants=registry.tenant_count())
-        return {
+        body: dict[str, object] = {
             "api_key": issued.api_key,
             "namespace": issued.namespace,
             "mcp_url": public_mcp_url(settings, request),
             "read_only": False,
         }
+        if issued.note:
+            body["note"] = issued.note
+        return body
 
     @app.get(MCP_INFO_PATH)
     def get_mcp_info(request: Request) -> dict[str, object]:
