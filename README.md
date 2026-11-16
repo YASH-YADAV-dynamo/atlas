@@ -156,10 +156,6 @@ The whole file is validated before anything is imported. Schema and `TraceRecord
 
 ## Results
 
-Measured on our self-hosted TestMart benchmark: a synthetic back-office app that we run ourselves.
-Success is always the application's own database check, never the agent's belief. Method, arms and prices:
-[docs/benchmark.md](docs/benchmark.md).
-
 ### Live run on real sites (2026-11-16)
 
 Real headless Chromium on Wikipedia against the deployed Atlas, with a plain agent as the baseline on the
@@ -171,54 +167,6 @@ same model (DeepSeek `deepseek-flash`). Success is checked on the landing URL. F
   success rate as the plain agent (10/10).
 - **Early and improving.** Atlas is young: every run teaches it more of a site, and we ship fixes against live
   runs daily.
-
-The synthetic-site benchmark so far is `smoke-deepseek-20261115`: a smoke benchmark, one seed, DeepSeek model
-(`deepseek-flash`), 240 task records, $0.98 spent, not partial. Every number below is copied from
-`results/smoke-deepseek-20261115/`.
-
-**Arms.** B0: plain model-driven agent, no memory. B1: trajectory cache keyed by task template. A: Atlas
-(in-memory map in this run). M0: an MCP client with browser tools only. M1: the same plus the Atlas MCP server.
-
-### Held-out tasks, last iteration (10 tasks per arm)
-
-Smoke benchmark, one seed, DeepSeek model.
-
-| Arm | Held-out success | Model calls per success | Tokens per success | Zero-model-call share | Wall time p50 / p95 |
-|---|---|---|---|---|---|
-| B0 no memory | 7/10 | 10.6 | 18,195 | 0% | 5.3 s / 61.6 s |
-| B1 trajectory cache | 9/10 | 2.0 | 3,364 | 60% | 0.4 s / 14.6 s |
-| A Atlas | 6/10 | 1.2 | 1,966 | 20% | 1.4 s / 23.8 s |
-
-Over all three held-out iterations (30 tasks per arm): B0 21/30, B1 25/30, A 19/30. Atlas scored 5/10, 8/10
-and 6/10 by iteration. In the last iteration Atlas used the fewest model calls per successful task; across the
-three iterations it did not, and the trajectory cache had the highest held-out success.
-
-### Learning curves and baselines
-
-Smoke benchmark, one seed, DeepSeek model.
-
-![Held-out success per iteration](results/smoke-deepseek-20261115/heldout_success.png)
-
-![Model calls and tokens per successful task, held-out tasks](results/smoke-deepseek-20261115/cost_heldout.png)
-
-### Tool calls and context per task (M0 vs M1, stream tasks)
-
-Smoke benchmark, one seed, DeepSeek model. Means over the three stream iterations (30 tasks per arm).
-
-| | Tool calls per task | Context tokens per task | Success | Wall time p50 |
-|---|---|---|---|---|
-| M0 browser tools only | 10.4 | 1,470 | 30/30 | 18.7 s |
-| M1 with Atlas MCP | 12.3 | 2,495 | 28/30 | 11.8 s |
-
-M1 did not reduce tool calls or context tokens; in this run it used more of both.
-
-![Tool calls and context tokens per task, M0 and M1](results/smoke-deepseek-20261115/mcp_round_trips_context.png)
-
-**What this run does and does not show.** It shows how often each arm finished these tasks and what each
-success cost in model calls and tokens, on one seed with 10 tasks per cell, where a gap of one or two tasks
-is noise. It does not show that Atlas beats a plain agent or a trajectory cache on success, and it does not
-show that the Atlas MCP server saves tool calls or context. Model errors ended 42 of the 180 B0, B1 and A
-tasks (the model's reply could not be used); those count as failures.
 
 ## Run locally
 
