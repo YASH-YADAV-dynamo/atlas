@@ -76,6 +76,7 @@
 <tr><th scope="row"><code>atlas_recall</code></th><td>You need where an entity was last seen. Input: <code>entity_type</code>, <code>key</code>.</td><td>Found, the page's state id and URL template.</td></tr>
 <tr><th scope="row"><code>atlas_report</code></th><td>After every step you executed, to teach the map. Input: <code>site</code>, <code>from_state</code>, <code>action</code>, <code>to_snapshot_summary</code>, <code>ok</code>, optional <code>event_id</code>, <code>goal_text</code>, <code>params</code>, <code>goal_reached</code>.</td><td>The new <code>state_id</code>, whether it was known. Safe to retry with the same <code>event_id</code>.</td></tr>
 </tbody></table>
+<p><strong>Agent flow.</strong> Call <code>atlas_plan</code> once at the start (add <code>replay: "script"</code> if your client has a Playwright run-code tool). If it returns <code>open_url</code>, navigate there; if a <code>script</code>, run it in one browser call; if a <code>route</code>, follow it. At the end call <code>atlas_report</code> once, with a batch of up to 12 <code>steps</code> or the replay outcome (<code>plan_id</code>, <code>done</code>, <code>ok</code>); after a clean exact replay the report is optional. A miss costs one plan plus one batch report; a repeat takes one Atlas call plus an optional report, instead of two per step plus two before. Your own model still makes those calls: the saving is fewer turns and browser steps. Put the subject in <code>params</code> ("Find the awards of {person}" with <code>{"person": "Hrithik Roshan"}</code>) and use <code>kind: "read"</code> for look-ups. If the plan returns <code>match: "similar"</code> with a <code>goal</code> and <code>params</code>, plan again with those to accept it.</p>
 <p>Resources: <code>atlas://sites</code> (mapped sites and sizes) and <code>atlas://site/{site}/changes</code>. With the public demo key the tools are read-only: <code>atlas_report</code> returns a <code>read-only</code> error. Self-hosted stdio mode can also expose <code>atlas_run</code> and <code>atlas_act</code>, where Atlas drives a local browser itself.</p>
 </section>
 
@@ -94,17 +95,21 @@ POST /v1/plan    {"site": "shop", "state_id": 12, "goal_text": "Refund order 104
 POST /v1/report  {"site": "shop", "from_state": 12, "action": {...}, "to_snapshot": {...}, "ok": true, "ms": 180,
                   "event_id": "run1-0", "goal_text": "Refund order 1042", "params": {"order_id": "1042"}, "goal_reached": false}
 # -> {"state_id": 14, "known": true, "duplicate": false}</code></pre></div>
-<p>Also: <code>GET /v1/map/{site}</code>, <code>GET /v1/changes?site=</code>, <code>GET /v1/skills?site=</code>, <code>GET /healthz</code>. Plan reasons: <code>route_found</code>, <code>unknown_goal</code>, <code>no_route_within_max_steps</code>, <code>missing_params</code>. Reports are idempotent on <code>event_id</code>.</p>
+<p>Session core: <code>POST /v1/start</code> (locate, match the goal and plan in one call) and <code>POST /v1/finish</code> (report the outcome in one call). Also: <code>GET /v1/map/{site}</code>, <code>GET /v1/changes?site=</code>, <code>GET /v1/skills?site=</code>, <code>GET /healthz</code>. Plan reasons: <code>route_found</code>, <code>unknown_goal</code>, <code>no_route_within_max_steps</code>, <code>missing_params</code>. Reports are idempotent on <code>event_id</code>.</p>
 </section>
 
 <section id="sdk">
 <h2>Python SDK</h2>
-<p>A thin client over the Route API. It depends on <code>httpx</code> only.</p>
+<p>A thin client over the Route API, published on PyPI. It depends on <code>httpx</code> only. A run makes one <code>POST /v1/start</code> and one <code>POST /v1/finish</code>; known routes replay with no model call in your code. On real Wikipedia the first topic needed 2 model calls and each later topic 0.</p>
+<div class="codeblock"><header><span>Shell</span><button class="copy" type="button" data-copy="s0">Copy</button></header><pre><code id="s0">pip install atlas-route-sdk
+pip install "atlas-route-sdk[playwright]"</code></pre></div>
 <div class="codeblock"><header><span>Python</span><button class="copy" type="button" data-copy="s1">Copy</button></header><pre><code id="s1">from atlas_sdk import Atlas
+from atlas_sdk.drivers.playwright import PlaywrightDriver
 
-atlas = Atlas("https://atlas.yashdynamo.fun", api_key, site="shop.example")
-summary = atlas.session(driver).run("Refund order 1042", {"order_id": "1042"}, fallback=my_agent_step)
-print(summary)  # RunSummary(success=True, steps=5, map_steps=5, fallback_calls=0)</code></pre></div>
+atlas = Atlas("https://atlas.yashdynamo.fun", api_key, site="en.wikipedia.org")
+summary = atlas.session(PlaywrightDriver(page)).run(
+    "Open the Wikipedia article about {topic}", {"topic": "Kajol"}, fallback=my_agent_step, kind="read")
+print(summary)  # RunSummary(success=True, steps=1, map_steps=1, fallback_calls=0)</code></pre></div>
 <ul>
 <li><code>driver</code> has <code>snapshot()</code> (url, title, elements as role/name dicts) and <code>act(action)</code>.</li>
 <li><code>fallback(snapshot, goal, params)</code> is your own agent step. It is called only where the map ends and returns one action, or <code>None</code> when the goal is done.</li>

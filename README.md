@@ -113,7 +113,7 @@ it, and plan again. Also: `GET /v1/map/{site}`, `GET /v1/changes?site=`, `GET /v
 ### Python SDK
 
 ```bash
-pip install ./sdk
+pip install atlas-route-sdk
 ```
 
 ```python

@@ -251,13 +251,16 @@ in the same file: plan first, report every step.</code></pre></div>
        "params": {"order_id": "1042"}}'</code></pre></div>
     </div>
     <div class="panelc" role="tabpanel" id="p-sdk" aria-labelledby="t-sdk" hidden>
-      <p>A thin typed client. Your agent step is called only where the map ends.</p>
+      <p>Published on PyPI: <code>pip install atlas-route-sdk</code> (add <code>"atlas-route-sdk[playwright]"</code> for the driver). A run is one start and one finish call; your agent step is called only where the map ends.</p>
       <div class="codeblock"><header><span>Python</span><button class="copy" type="button" data-copy="c-sdk">Copy</button></header>
-<pre><code id="c-sdk">from atlas_sdk import Atlas
+<pre><code id="c-sdk">pip install atlas-route-sdk
 
-atlas = Atlas("https://atlas.yashdynamo.fun", api_key, site="shop.example")
-summary = atlas.session(driver).run(
-    "Refund order 1042", {"order_id": "1042"}, fallback=my_agent_step)</code></pre></div>
+from atlas_sdk import Atlas
+from atlas_sdk.drivers.playwright import PlaywrightDriver
+
+atlas = Atlas("https://atlas.yashdynamo.fun", api_key, site="en.wikipedia.org")
+summary = atlas.session(PlaywrightDriver(page)).run(
+    "Open the Wikipedia article about {topic}", {"topic": "Kajol"}, fallback=my_agent_step, kind="read")</code></pre></div>
     </div>
     <div class="panelc" role="tabpanel" id="p-trace" aria-labelledby="t-trace" hidden>
       <p>Already have recorded runs? Import them to seed the map without running anything again.</p>

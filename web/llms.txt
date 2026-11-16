@@ -28,36 +28,40 @@ If a user gave you this file and asked you to set up Atlas, do this:
    If you cannot edit the config yourself, show the user the one snippet for their client and the file it goes in.
 3. Check the connection: list tools and expect `atlas_find_skills`, `atlas_plan`, `atlas_recall`, `atlas_report`. Some clients need a restart or reload first; tell the user if so.
 4. When it works, reply to the user with a short, humble welcome, for example:
-   "Atlas is connected (key ending ...abcd). Thank you for trying it. From now on I will check the map before I explore a website, follow routes it already knows without extra model calls, and report each step so the map gets a little better every run. It starts empty and learns from your own runs, so the first run of a task costs as usual and the repeats get cheaper. If anything looks off, tell me."
+   "Atlas is connected (key ending ...abcd). Thank you for trying it. From now on I will check the map before I explore a website, follow routes it already knows, and report the outcome so the map gets a little better every run. It starts empty and learns from your own runs, so the first run of a task costs as usual and the repeats get cheaper. If anything looks off, tell me."
    If setup failed, say plainly which step failed and what the user can do.
 
 Just want to look first? `GET https://atlas.yashdynamo.fun/v1/mcp-info` returns a public read-only demo key on a pre-built map.
 
 ## Use Atlas effectively
 
-- Ask before you explore: call `atlas_find_skills` with the site and goal, then `atlas_plan` from the current page.
-- Follow the plan exactly: execute the returned steps in order in your own browser, with no model call for those steps.
-- Think only at the frontier: when the plan says `needs_model`, run any steps it returned, then choose one action yourself, execute it, and report it. Then plan again.
-- Report every step, success or failure, with `ok` and the time it took. Set `goal_reached: true` on the last step. Failures are as useful as successes: they raise that step's cost so later plans route around it.
-- Keep values out of goal text: write "refund order" with `params: {"order_id": "1042"}`, not "refund order 1042". Keep the goal text identical across runs (`{slot}`s are fine). One learned route then serves every order.
-- In an action or fill, set `param` (a params key) or `value`, never both.
-- Describe the page the same way each time (URL plus interactive elements by role and name), so the same page maps to the same state.
-- Use `atlas_recall` to find where an entity (an order id, a user) was last seen instead of searching again.
-- Repeats get cheaper: the second run of a known task should need zero model calls. If it does not, report the failed step instead of working around it silently.
-- Atlas never opens a browser and never acts on a site. Never send passwords, card numbers or other secrets in any field.
+The whole flow is two calls: plan once at the start, report once at the end.
+
+1. Call `atlas_plan` ONCE at the start with `site`, `goal_text`, `params` and a summary of the current page (URL plus interactive elements by role and name). Pass `replay: "script"` if your client has a Playwright run-code tool.
+2. Act on what it returns. If it returns `open_url`, navigate there. If it returns a `script`, run it in one browser call. If it returns a `route`, follow the steps in order. If it returns `needs_model` with no route, explore yourself.
+3. Call `atlas_report` ONCE at the end. Either send a batch of `steps` (at most 12, each with the action, the page it led to and `ok`) with `goal_text` and `goal_reached: true`, or send the replay outcome (`plan_id`, `done` and `ok`). After a clean, exact replay the report is optional.
+4. A miss costs one plan plus one batch report. A repeat of a known task costs one Atlas tool call plus an optional report, instead of two calls per step plus two before. Your own model still makes those tool calls; the saving is fewer turns and fewer browser steps.
+5. Put the subject in `params`, not in the goal text, so other subjects reuse the route. Example: goal "Find the awards of {person}" with `params: {"person": "Hrithik Roshan"}`. Keep the goal text the same across runs.
+6. Use `kind: "read"` for research and look-up goals, so Atlas remembers the answer page and later runs open it directly.
+7. If the plan returns `match: "similar"` with a `goal` and `params`, call `atlas_plan` again with that goal and those params to accept the suggestion.
+8. In an action or fill, set `param` (a params key) or `value`, never both.
+9. Use `atlas_find_skills` to see what the map knows, and `atlas_recall` to find where an entity (an order id, a user) was last seen instead of searching again.
+10. Report failures too: a failed step raises its cost, so later plans route around it.
+11. Atlas never opens a browser and never acts on a site. Never send passwords, card numbers or other secrets in any field.
+
 
 ## Docs
 
-- [Quickstart](https://atlas.yashdynamo.fun/docs/quickstart.html): get a key, add the MCP server, make the first plan and report calls
-- [MCP server](https://atlas.yashdynamo.fun/docs/mcp.html): keys, client setup, tools, resources, errors
-- [Route API](https://atlas.yashdynamo.fun/docs/route-api.html): locate, plan and report over HTTP; map, skills and changes
-- [Python SDK](https://atlas.yashdynamo.fun/docs/sdk.html): run a task through the map with your own driver and fallback step
-- [Trace import](https://atlas.yashdynamo.fun/docs/trace-import.html): turn recorded runs (JSON Lines) into a map
-- [Concepts](https://atlas.yashdynamo.fun/docs/concepts.html): states, actions, edge cost, frontier, skills, resolved entities, change events, namespaces
+- [Quickstart](https://atlas.yashdynamo.fun/docs.html#quickstart): get a key, add the MCP server, make the first plan and report calls
+- [MCP server](https://atlas.yashdynamo.fun/docs.html#mcp-tools): keys, client setup, tools, resources, errors
+- [Route API](https://atlas.yashdynamo.fun/docs.html#route-api): locate, plan and report over HTTP; map, skills and changes
+- [Python SDK](https://atlas.yashdynamo.fun/docs.html#sdk): run a task through the map with your own driver and fallback step
+- [Trace import](https://atlas.yashdynamo.fun/docs.html#trace-import): turn recorded runs (JSON Lines) into a map
+- [Concepts](https://atlas.yashdynamo.fun/docs.html#concepts): states, actions, edge cost, frontier, skills, resolved entities, change events, namespaces
 
 ## Product
 
-- [Playground](https://atlas.yashdynamo.fun/playground.html): send real MCP tool calls from the browser and watch the graph update
+- [Playground](https://atlas.yashdynamo.fun/app.html): send real MCP tool calls from the browser and watch the graph update
 - [Overview](https://atlas.yashdynamo.fun/): what Atlas is and how it compares with re-exploring, scripts and flat memory
 
 ## Optional

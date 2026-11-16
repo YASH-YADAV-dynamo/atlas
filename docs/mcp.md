@@ -219,13 +219,13 @@ Resources: `atlas://sites` (mapped sites and their sizes) and the template
 `atlas://site/{site}/changes` (recent flow changes on a site).
 
 Every response is compact JSON within a fixed token budget; long lists are cut and flagged
-`truncated`. A typical loop:
+`truncated`. A typical loop is two calls:
 
-1. `atlas_find_skills` with the goal, to see what is already known.
-2. `atlas_plan` with the current page summary; execute the returned steps in your browser.
-3. Where the plan says `needs_model`, let your model choose the next action, execute it, and
-   `atlas_report` it (with `goal_reached: true` on the last step).
-4. Next time, `atlas_plan` returns the whole route.
+1. `atlas_plan` ONCE at the start: `site`, `goal_text` with `{slots}`, `params`, and a page summary. Add `replay: "script"` if the client has a Playwright run-code tool.
+2. If it returns `open_url`, navigate there. If it returns a `script`, run it in one browser call. If it returns a `route`, follow it.
+3. `atlas_report` ONCE at the end: a batch of `steps` (max 12) with `goal_reached: true`, or the replay outcome (`plan_id`, `done`, `ok`). After a clean exact replay the report is optional.
+
+A miss costs one plan plus one batch report; a repeat takes one Atlas call plus an optional report, instead of two per step plus two before. The agent's own model still makes those calls: the saving is fewer turns and browser steps. Put the subject in `params`, not the goal text (goal "Find the awards of {person}", params `{"person": "Hrithik Roshan"}`), and use `kind: "read"` for look-up goals so the answer page is remembered. If the plan returns `match: "similar"` with a `goal` and `params`, plan again with those to accept the suggestion. `atlas_find_skills` lists what the map knows.
 
 ## What is stored per key
 
