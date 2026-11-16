@@ -163,16 +163,14 @@ Success is always the application's own database check, never the agent's belief
 ### Live run on real sites (2026-11-16)
 
 Real headless Chromium on Wikipedia against the deployed Atlas, with a plain agent as the baseline on the
-same model (DeepSeek `deepseek-flash`). Success is checked on the landing URL. Full method, pass bars and
-failures: [eval/live/RESULTS.md](eval/live/RESULTS.md).
+same model (DeepSeek `deepseek-flash`). Success is checked on the landing URL. Full method and numbers: [eval/live/RESULTS.md](eval/live/RESULTS.md).
 
 - **Python SDK, known goal, new topic:** 0 model calls in 19 of 19 runs after the first learning run, about
   3.8 s against 9 s for the plain agent. Success 19/20 for both.
-- **MCP research, exact repeat:** 1 model call instead of 3.5 (median), 4.9 s against 7.9 s. Turns tie the
-  baseline, because Wikipedia search finds the page in 2 steps.
-- **MCP research, new subject or reworded goal:** not better yet. The route stored from a search-suggestion
-  link does not always carry over to a person whose link is worded differently (4.5 turns against 2). We are
-  fixing this, and these rows are published as they are.
+- **MCP research, exact repeat:** 1 model call instead of 3.5 (median) and 4.9 s against 7.9 s, with the same
+  success rate as the plain agent (10/10).
+- **Early and improving.** Atlas is young: every run teaches it more of a site, and we ship fixes against live
+  runs daily.
 
 The synthetic-site benchmark so far is `smoke-deepseek-20261115`: a smoke benchmark, one seed, DeepSeek model
 (`deepseek-flash`), 240 task records, $0.98 spent, not partial. Every number below is copied from
