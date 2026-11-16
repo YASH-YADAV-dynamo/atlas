@@ -155,3 +155,6 @@ section.block h2{max-width:26ch;font-size:clamp(28px,3.8vw,44px);letter-spacing:
 .panelc .fine{font-size:13px;margin:var(--s1) 0 0}
 #tr-mean{color:var(--muted);margin:0 0 var(--s2);max-width:60ch}
 #setup .codeblock{max-width:760px}#setup .fine{font-size:13px;color:var(--muted);margin:var(--s2) 0 0}
+
+/* hero: copyable agent prompt (llms.txt) */
+.hero-prompt{max-width:760px;margin:var(--s3) 0 var(--s4)}.hero-prompt header small a{color:inherit}.hero-prompt pre{white-space:pre-wrap;overflow-wrap:anywhere}

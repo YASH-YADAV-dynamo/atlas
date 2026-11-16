@@ -35,6 +35,11 @@
   <h1>The shared map under every <em class="serif">browser agent.</em></h1>
   <p class="sub">Fleets of Chromium instances re-explore the same sites, and every extra step is another model call and more browser seconds. Atlas is a live context store in HydraDB: pages, actions, skills and resolved entities in one graph, so the first agent explores and the rest follow the route.</p>
   <div class="cta"><a class="btn primary big" href="/app.html">Run a live task</a><button type="button" class="btn big" data-connect>Connect your agent</button></div>
+  <div class="codeblock hero-prompt"><header><span>Paste into your agent <small>Claude Code, Cursor, Codex or any agent that can run commands · reads <a href="/llms.txt">llms.txt</a></small></span><button class="copy" type="button" data-copy="c-hero">Copy</button></header>
+<pre><code id="c-hero">Read https://atlas.yashdynamo.fun/llms.txt and follow "Set up Atlas": create a
+private key, add the Atlas MCP server, check the four atlas_ tools, and tell me
+when it is connected. Never print the key in full. Then, on every website task,
+follow "Use Atlas effectively": plan first, report every step.</code></pre></div>
   <figure class="fig">
     <svg class="fleet" viewBox="0 0 680 330" role="img" aria-label="Animated diagram. Four browser agents head for the same site. The first explores slowly, calling the model at every step, and writes the route into the Atlas map. The other three read the route from the map and follow it fast, with zero model calls.">
 <title>Fleet of browser agents sharing one Atlas map</title>
