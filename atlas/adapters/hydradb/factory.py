@@ -7,6 +7,8 @@ unreachable, startup fails with a clear error.
 
 from __future__ import annotations
 
+from typing import cast
+
 from atlas.contracts.errors import StoreUnavailableError
 from atlas.contracts.ports import MapStore
 from atlas.settings import Settings
@@ -33,4 +35,7 @@ def open_configured_store(settings: Settings) -> MapStore:
             f"HydraDB is selected (ATLAS_STORE=hydradb) but unreachable at {settings.hydradb_url}; "
             "check HYDRADB_URL, HYDRADB_TOKEN and HYDRADB_GRAPH, or set ATLAS_STORE=memory explicitly"
         ) from exc
-    return store
+    from atlas.adapters.cached import CachedStore
+
+    # Repeated tasks re-ask the same reads; serve them from memory until the namespace changes.
+    return cast(MapStore, CachedStore(store))

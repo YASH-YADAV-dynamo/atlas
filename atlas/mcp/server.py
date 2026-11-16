@@ -139,7 +139,11 @@ def build_server(
                 if quota is not None:
                     quota.check_event_quota(principal)
             method: Callable[[Any], BaseModel] = getattr(session_tools, spec.name.removeprefix("atlas_"))
-            if executor is None:
+            if executor is None and principal is not None:
+                # Hosted tools are stateless and the store is thread-safe: run them off the event
+                # loop so one tenant's HydraDB round trips never stall every other tenant.
+                result = await asyncio.to_thread(method, request)
+            elif executor is None:
                 result = method(request)
             else:
                 result = await asyncio.get_running_loop().run_in_executor(executor, method, request)

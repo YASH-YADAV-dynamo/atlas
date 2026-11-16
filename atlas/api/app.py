@@ -51,6 +51,7 @@ from atlas.mcp.keys import (
     TenantError,
     rate_key,
 )
+from atlas.mcp.pending import hold_or_fold
 from atlas.mcp.server import KEY_PATH_PREFIX, MCP_PATH, build_http_app, tenant_tools_factory
 from atlas.settings import Settings
 
@@ -172,7 +173,11 @@ def create_app(
         caller.require_write("report")
         registry.check_event_quota(caller)
         ns = caller.namespace
-        result = learner.report(store, clock, ns, request)
+        folded = hold_or_fold(ns, request)
+        if folded is None:  # a same-page form fill, folded into the next action from this page
+            known = store.get_state(ns, request.from_state) is not None
+            return ReportResponse(state_id=request.from_state, known=known, duplicate=False)
+        result = learner.report(store, clock, ns, folded)
         if not result.duplicate:
             registry.note_event(caller)
         change = changes.note_report(routes, clock, ns, result)

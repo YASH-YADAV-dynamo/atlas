@@ -133,7 +133,10 @@ class HydraGraphStore:
         return _state(row) if row else None
 
     def upsert_state(self, ns: str, state: State) -> bool:
-        known = self.get_state(ns, state.id) is not None
+        stored = self.get_state(ns, state.id)
+        known = stored is not None
+        if stored == state:
+            return True  # already stored with the same facts: nothing to write
         row = {
             "id": state.id,
             "ns": ns,
@@ -160,18 +163,21 @@ class HydraGraphStore:
 
     def record_observation(self, ns: str, obs: Observation) -> Transition:
         tid, src, dst = obs.transition_id, obs.from_state, obs.to_state
-        self._run(q.MERGE_TRANSITION_IN, from_state=src, tid=tid)
-        self._run(q.MERGE_TRANSITION_OUT, tid=tid, to_state=dst)
-        self._run(
-            q.SET_TRANSITION_FACTS,
-            tid=tid,
-            ns=ns,
-            site=obs.site,
-            from_state=src,
-            to_state=dst,
-            action_json=obs.action.model_dump_json(),
-        )
-        self._run(q.SET_OUT_EDGE_COST, tid=tid, to_state=dst)
+        # The id is derived from (ns, from, action, to), so a readable transition already has
+        # these edges and facts; its facts are written last, so it is readable only when complete.
+        if self._load_transition(ns, tid) is None:
+            self._run(q.MERGE_TRANSITION_IN, from_state=src, tid=tid)
+            self._run(q.MERGE_TRANSITION_OUT, tid=tid, to_state=dst)
+            self._run(q.SET_OUT_EDGE_COST, tid=tid, to_state=dst)
+            self._run(
+                q.SET_TRANSITION_FACTS,
+                tid=tid,
+                ns=ns,
+                site=obs.site,
+                from_state=src,
+                to_state=dst,
+                action_json=obs.action.model_dump_json(),
+            )
 
         eid = event_node_id(ns, obs.event_id)
         duplicate = self._event_recorded(eid)

@@ -51,6 +51,7 @@ from atlas.core.params import bind_action, goal_key, required_slots, templatise_
 from atlas.core.planner import plan as plan_route
 from atlas.core.signature import state_from_snapshot
 from atlas.mcp.budget import enforce_budget
+from atlas.mcp.pending import hold_or_fold
 
 _WORD = re.compile(r"[a-z0-9]+")
 _SLOT = re.compile(r"\{([a-z][a-z0-9_]*)\}")
@@ -600,11 +601,18 @@ class AtlasTools:
             goal_reached=request.goal_reached,
             run_id=request.run_id,
         )
-        result = learn(self._store, self._clock, self._ns, event)
+        folded = hold_or_fold(self._ns, event)
+        if folded is None:
+            # A same-page form fill: held and folded into the action that submits it, so a
+            # replayed route fills the field first (a self-loop would never be planned).
+            here = request.from_state
+            known = self._store.get_state(self._ns, here) is not None
+            return m.ReportToolOutput(state_id=here, known=known, duplicate=False, event_id=event_id)
+        result = learn(self._store, self._clock, self._ns, folded)
         if request.ok and result.transitions and not result.duplicate:
             self._record_entities(
                 _Session(goal_text=request.goal_text or "", params=dict(request.params)),
-                request.action,
+                folded.action,
                 result.transitions[-1],
                 [],
             )
