@@ -91,13 +91,31 @@ def _swap_query(query: str, values: Mapping[str, str], *, literal: str | None = 
     return "&".join(out), hit
 
 
+def _swap_segment(segment: str, values: Mapping[str, str]) -> str:
+    """One path segment with a parameter value as `{slot}`: the whole segment, or the value as
+    whole words inside it (`List_of_awards_received_by_Hrithik_Roshan` -> `..._by_{person}`)."""
+    folded = _fold(segment)
+    if folded in values:
+        return "{" + values[folded] + "}"
+    text = unquote(segment)
+    for value in sorted(values, key=len, reverse=True):
+        words = value.split(" ")
+        if len(words) < 2 and len(value) < 4:
+            continue  # a short single word would match too much
+        body = r"[\s_+-]+".join(re.escape(w) for w in words)
+        found = re.search(rf"(?<![^\s_+-]){body}(?![^\s_+-])", text, re.IGNORECASE)
+        if found:
+            return text[: found.start()] + "{" + values[value] + "}" + text[found.end() :]
+    return segment
+
+
 def answer_template(url: str, params: Mapping[str, str]) -> str | None:
     """`url` with parameter values as `{slot}`, or None when none appears or binding would differ."""
     values = _values(params)
     if not values:
         return None
     parts = urlsplit(url)
-    swapped = [f"{{{values[f]}}}" if (f := _fold(seg)) in values else seg for seg in parts.path.split("/")]
+    swapped = [_swap_segment(seg, values) for seg in parts.path.split("/")]
     query, _ = _swap_query(parts.query, values)
     template = urlunsplit((parts.scheme, parts.netloc, "/".join(swapped), query, ""))
     if not _SLOT.search(template):
