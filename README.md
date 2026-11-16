@@ -1,6 +1,6 @@
 # Atlas
 
-**The route-planning layer for browser agents: steps the map already knows run with zero model calls.**
+**The route-planning layer for browser agents: steps the map already knows are served from the map, with no model call to pick them.**
 
 Atlas is a route-planning and context layer for browser agents, built on HydraDB. It plans routes over the sites it has mapped, and it asks a model to explore only where the map ends.
 
@@ -50,6 +50,19 @@ Runner mode: Atlas drives a browser session for the agent.
 
 Planner mode (`MCP_MODE=planner`) is for agents that already have a browser tool; it adds `atlas_plan` and
 `atlas_report`. Responses are capped at 400 tokens and never contain HTML or a full accessibility tree.
+
+Hosted server (no install): `https://atlas.yashdynamo.fun/mcp`, streamable HTTP, bearer key from
+`POST /v1/keys`. Agents that read only [llms.txt](https://atlas.yashdynamo.fun/llms.txt) can set it up from there.
+The flow is two calls on a repeat task:
+
+1. `atlas_plan` with the site, the current page (url and title are enough) and the goal. It returns a `plan_id`
+   and one of: an `open_url` to navigate to, a Playwright replay script, or a step-by-step route.
+2. `atlas_report` after the task. Send the steps taken in one batch (up to 12), or for a replayed plan just
+   `plan_id` and `done`. `ok` is optional. Atlas learns from it; blocked and error pages are never learned.
+
+Page identity is tolerant: a page that changed a banner or a list still matches its known state. Goals match
+by exact text, then by the same words, then by a one-slot match (for example a different person's name).
+Similar wording is only suggested, and the agent confirms it. Tool definitions are kept under 2,500 tokens.
 
 Claude Desktop, Cursor and other stdio clients: run `python` from an environment where `atlas` is installed
 (the project's `.venv`).
@@ -106,6 +119,9 @@ curl -s -X POST $API/v1/report -H "$AUTH" -H "Content-Type: application/json" -d
   "ok": true, "ms": 120, "event_id": "run-1-step-0"}'
 ```
 
+For a whole run in two calls, `POST /v1/start` (site, snapshot, goal, params) returns a plan, and
+`POST /v1/finish` (the plan id and the outcome) records it. The Python SDK uses exactly these.
+
 An empty `route` with `"needs_model": true` means you are at the edge of the map: explore one step, report
 it, and plan again. Also: `GET /v1/map/{site}`, `GET /v1/changes?site=`, `GET /v1/skills?site=`,
 `POST /v1/sleep?site=`, `GET /healthz`. Models: `atlas/contracts/api_models.py`.
@@ -144,7 +160,23 @@ Measured on our self-hosted TestMart benchmark: a synthetic back-office app that
 Success is always the application's own database check, never the agent's belief. Method, arms and prices:
 [docs/benchmark.md](docs/benchmark.md).
 
-The only run so far is `smoke-deepseek-20261115`: a smoke benchmark, one seed, DeepSeek model
+### Live run on real sites (2026-11-16)
+
+Real headless Chromium on Wikipedia against the deployed Atlas, with a plain agent as the baseline on the
+same model (DeepSeek `deepseek-flash`). Success is checked on the landing URL. Full method, pass bars and
+failures: [eval/live/RESULTS.md](eval/live/RESULTS.md).
+
+- **Python SDK, known goal, new topic:** 0 model calls in 19 of 19 runs after the first learning run, about
+  3.8 s against 9 s for the plain agent. Success 19/20 for both.
+- **MCP research, exact repeat:** 1 model call instead of 3.5 (median), 4.9 s against 7.9 s. Turns tie the
+  baseline, because Wikipedia search finds the page in 2 steps.
+- **MCP research, new subject or reworded goal:** not better yet. The route stored from a search-suggestion
+  link does not always carry over to a person whose link is worded differently (4.5 turns against 2). We are
+  fixing this, and these rows are published as they are.
+
+Two live sandboxes, one synthetic, one real, and both are measured. The smoke benchmark below uses the synthetic one.
+
+The first benchmark run is `smoke-deepseek-20261115`: a smoke benchmark, one seed, DeepSeek model
 (`deepseek-flash`), 240 task records, $0.98 spent, not partial. Every number below is copied from
 `results/smoke-deepseek-20261115/`.
 
