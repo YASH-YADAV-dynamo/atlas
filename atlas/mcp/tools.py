@@ -25,14 +25,13 @@ from typing import Literal, cast
 from pydantic import ValidationError
 
 from atlas.contracts import mcp_models as m
-from atlas.contracts.api_models import PlanRequest
+from atlas.contracts.api_models import FinishRequest, FinishStep, PlanRequest, StartRequest
 from atlas.contracts.errors import (
     BrowserActionError,
     MissingParamError,
     ToolUnavailableError,
-    UnknownStateError,
 )
-from atlas.contracts.ports import BrowserDriver, Clock, MapStore, SiteStore
+from atlas.contracts.ports import BrowserDriver, Clock, MapStore, SessionStore, SiteStore
 from atlas.contracts.types import (
     MAX_ROUTE_STEPS,
     Action,
@@ -48,16 +47,15 @@ from atlas.contracts.types import (
     Snapshot,
     Transition,
 )
+from atlas.core import session as core_session
 from atlas.core.blocked import blocked_reason, unlearned_result
 from atlas.core.cost import reliability
 from atlas.core.goals import content_words, skill_match, visible_goals
-from atlas.core.goals import resolve as resolve_goal
 from atlas.core.ids import entity_id
 from atlas.core.learner import report as learn
 from atlas.core.locate import locate, resolve
 from atlas.core.params import bind_action, required_slots, templatise_action
 from atlas.core.planner import plan as plan_route
-from atlas.core.planner import plan_for
 from atlas.mcp.budget import enforce_budget
 from atlas.mcp.pending import hold_or_fold
 
@@ -250,11 +248,7 @@ class AtlasTools:
         if kind != "goal":
             return None
         return next(
-            (
-                g
-                for g in visible_goals(self._store.list_goals(self._ns, self._site))
-                if str(g.id) == number
-            ),
+            (g for g in visible_goals(self._store.list_goals(self._ns, self._site)) if str(g.id) == number),
             None,
         )
 
@@ -545,72 +539,74 @@ class AtlasTools:
     # ---- planner mode: atlas_plan / atlas_report ----------------------------------------
 
     def plan(self, request: m.PlanToolInput) -> m.PlanToolOutput:
-        blocked = blocked_reason(request.snapshot_summary)
-        if blocked is not None:  # not a page to route from or to learn: ask the model
-            here = unlearned_result(
-                self._store, self._ns, request.site, request.snapshot_summary, request.params, blocked
-            )
-            return m.PlanToolOutput(
-                state_id=here.state_id,
-                needs_model=True,
-                reason=PlanReason.NO_ROUTE_WITHIN_MAX_STEPS,
-                blocked=blocked,
-            )
-        is_new = False
-        if self._new_state_gate is not None and not self._read_only:
-            seen = resolve(self._store, self._ns, request.site, request.snapshot_summary, request.params)
-            is_new = not seen.known
-            if is_new:
+        snapshot = request.snapshot_summary
+        seen = None
+        if blocked_reason(snapshot) is None and (self._read_only or self._new_state_gate is not None):
+            seen = resolve(self._store, self._ns, request.site, snapshot, request.params)
+            if self._read_only and self._store.get_state(self._ns, seen.state_id) is None:
+                self._check_site(request.site)
+                # A page this map has never seen, and a read-only key may not record it.
+                return m.PlanToolOutput(
+                    state_id=seen.state_id,
+                    needs_model=True,
+                    reason=PlanReason.NO_ROUTE_WITHIN_MAX_STEPS,
+                )
+            if not self._read_only and not seen.known and self._new_state_gate is not None:
                 self._new_state_gate()
-        state_id = self._locate(request.site, request.snapshot_summary, request.params)
-        if is_new and self._on_new_state is not None:
-            self._on_new_state()
-        if self._read_only and self._store.get_state(self._ns, state_id) is None:
-            self._check_site(request.site)
-            # A page this map has never seen, and a read-only key may not record it.
-            return m.PlanToolOutput(
-                state_id=state_id, needs_model=True, reason=PlanReason.NO_ROUTE_WITHIN_MAX_STEPS
+
+        def fits(script: str) -> bool:
+            probe = m.PlanToolOutput(
+                state_id=2**53 - 1,
+                plan_id="0" * 12,
+                script=script,
+                script_steps=1,
+                needs_model=False,
+                reason=PlanReason.ROUTE_FOUND,
+                match="similar",
+                goal="x" * 80,
             )
-        if self._store.get_state(self._ns, state_id) is None:
-            raise UnknownStateError(f"unknown state: {state_id}")
-        found = resolve_goal(self._store, self._ns, request.site, request.goal_text, request.params)
-        planned = plan_for(
-            self._store,
+            return m.response_tokens(probe) <= m.MCP_RESPONSE_TOKEN_BUDGET
+
+        started = core_session.start(
+            cast(SessionStore, self._store),
             self._ns,
-            PlanRequest(
+            StartRequest(
                 site=request.site,
-                state_id=state_id,
+                snapshot=snapshot,
                 goal_text=request.goal_text,
                 params=request.params,
-                snapshot=request.snapshot_summary,
+                replay=request.replay,
             ),
-            found,
+            read_only=self._read_only,
+            final_step_varies=self._final_step_varies,
+            script_fits=fits,
         )
-        route = list(planned.route)
-        needs_model, reason = planned.needs_model, planned.reason
-        if route and self._final_step_varies(found.targets, route):
-            # The goal was reached by different literal clicks from this page on earlier runs
-            # (e.g. "the first book" of each category): replaying one of them would be wrong.
-            route.pop()
-            needs_model, reason = True, PlanReason.MISSING_PARAMS
+        if seen is not None and not seen.known and not self._read_only and self._on_new_state is not None:
+            self._on_new_state()
         steps = tuple(
             m.BriefStep(action=s.action, expect=s.expect_state, reliability=s.reliability)
-            for s in route
+            for s in started.route
         )
         return enforce_budget(
             m.PlanToolOutput(
-                state_id=state_id,
+                state_id=started.state_id,
+                plan_id=started.plan_id,
                 route=steps[: m.MAX_BRIEF_STEPS],
-                needs_model=needs_model,
-                reason=reason,
+                open_url=started.open_url,
+                script=started.script,
+                script_steps=started.script_steps,
+                search_url=started.search_url,
+                needs_model=started.needs_model,
+                reason=started.reason,
                 truncated=len(steps) > m.MAX_BRIEF_STEPS,
-                match=planned.match,
-                goal=planned.goal,
-                params=planned.params,
+                blocked=started.blocked,
+                match=started.match,
+                goal=started.goal,
+                params=started.params,
             )
         )
 
-    def _final_step_varies(self, targets: tuple[int, ...], route: list[RouteStep]) -> bool:
+    def _final_step_varies(self, targets: tuple[int, ...], route: tuple[RouteStep, ...]) -> bool:
         """True when the last step is a literal pick that differed between successful runs."""
         if required_slots(route[-1].action):
             return False  # bound from the task's parameters, so it already varies correctly
@@ -621,9 +617,13 @@ class AtlasTools:
         }
         return len(actions) > 1
 
-    def report(self, request: m.ReportToolInput) -> m.ReportToolOutput:
+    def report(self, request: m.ReportToolInput | m.ReportInput) -> m.ReportToolOutput:
         if self._read_only:
             raise ToolUnavailableError("this key is read-only: atlas_report is disabled")
+        if isinstance(request, m.ReportInput):
+            if request.action is None:
+                return self._finish(request)
+            request = request.as_single()
         event_id = request.event_id or f"mcp-{uuid.uuid4().hex}"
         event = ReportEvent(
             site=request.site,
@@ -661,6 +661,43 @@ class AtlasTools:
             duplicate=result.duplicate,
             event_id=event_id,
             blocked=result.blocked,
+        )
+
+    def _finish(self, request: m.ReportInput) -> m.ReportToolOutput:
+        """A batch (explored steps, fills folded inside this one call) or a replay outcome
+        (`plan_id`, `done`): the same core as REST `/v1/finish`."""
+        event_id = request.event_id or f"mcp-{uuid.uuid4().hex}"
+        finished = core_session.finish(
+            cast(SessionStore, self._store),
+            self._clock,
+            self._ns,
+            FinishRequest(
+                site=request.site,
+                plan_id=request.plan_id,
+                done=request.done,
+                from_state=request.from_state,
+                steps=tuple(
+                    FinishStep(action=step.action, to=step.to, ok=step.ok, ms=step.ms)
+                    for step in request.steps
+                ),
+                to_snapshot=request.to_snapshot_summary,
+                ok=request.ok,
+                ms=request.ms,
+                goal_text=request.goal_text,
+                params=request.params,
+                goal_reached=request.goal_reached,
+                kind=request.kind,
+                event_id=event_id,
+            ),
+        )
+        return m.ReportToolOutput(
+            state_id=finished.state_id,
+            known=True,
+            duplicate=finished.learned == 0,
+            event_id=event_id,
+            blocked=finished.blocked,
+            learned=finished.learned,
+            goal=finished.goal,
         )
 
     # ---- helpers ------------------------------------------------------------------------

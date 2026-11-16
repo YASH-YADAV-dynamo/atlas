@@ -25,32 +25,29 @@ from atlas.contracts.mcp_models import (
     tools_for,
 )
 
-_SAFE_INT = 2**53 - 1
 _BUDGET = f"Result is compact JSON, at most {MCP_RESPONSE_TOKEN_BUDGET} tokens."
 
 DESCRIPTIONS: dict[str, str] = {
     "atlas_find_skills": (
-        "Call first, once per task. Returns up to "
-        f"{MAX_SKILLS} goals the map can already complete on `site` that match goal_text: "
-        "skill_id, name (reuse it as goal_text), {slot} params and reliability 0-1. "
-        "Empty list: nothing known yet; explore in your own browser and atlas_report each step. "
-        f"{_BUDGET}"
+        "Call only to browse what the map can do on `site` for goal_text; atlas_plan already matches "
+        f"goals. Returns up to {MAX_SKILLS} goals: name (reuse as goal_text), {{slot}} params, "
+        f"reliability 0-1. {_BUDGET}"
     ),
     "atlas_plan": (
-        "Call on the page you are on whenever you need the next steps. Send your browser's page "
-        "summary (url, title, interactive elements; no HTML). Returns state_id (pass as from_state "
-        f"to atlas_report) and up to {MAX_BRIEF_STEPS} steps: action (fill {{slot}}s from params) "
-        "and expect, the state_id it should reach. needs_model=true: the map ends after the "
-        "returned steps (possibly none): run them, then pick the next action yourself and "
-        f"atlas_report it. {_BUDGET}"
+        "Call first, once per task, from the page you are on (send url and title; elements only if "
+        "one URL shows different screens). Returns state_id, plan_id and one of: open_url (read "
+        "goal: navigate there), script (with replay=script: run it with Playwright, it returns "
+        f"{{done}}), or up to {MAX_BRIEF_STEPS} route steps (fill {{slot}}s from params; expect is the "
+        "state_id each reaches). needs_model=true: explore, then atlas_report. match/goal: the stored "
+        f"wording that matched; reuse it. {_BUDGET}"
     ),
     "atlas_report": (
-        "Call after every step you executed in your own browser, ok=false for failures. "
-        "from_state: state_id from atlas_plan or the previous report. Returns the reached "
-        "state_id (your next from_state) and whether the page was known. On the step that "
-        "completes the task send goal_text, params and goal_reached=true so it becomes a skill. "
-        "Retry with the same event_id is a no-op. Needs a private key (POST /v1/keys); "
-        "the demo key is read-only. Result under 60 tokens."
+        "Call once per task, after it. Batch: from_state + steps [{action, to, ok}] (put fills in "
+        "the action that submits them), goal_text, params, goal_reached, kind=read when reaching the "
+        "page was the goal. Replay: plan_id + done + ok (optional after a clean exact replay). "
+        "Single: from_state, action, to_snapshot_summary. Returns state_id, learned, goal. "
+        "Retry with the same event_id is a no-op. Needs a private key (POST /v1/keys). "
+        "Result under 60 tokens."
     ),
     "atlas_recall": (
         "Call when the task names something resolved before (entity_type order_id, key 1042) "
@@ -61,20 +58,20 @@ DESCRIPTIONS: dict[str, str] = {
 }
 
 _DEF_HINTS: dict[str, str] = {
-    "Snapshot": "Your browser's current page, summarised. No HTML.",
-    "Action": "One step: optional form fills, then one trigger on locator.",
-    "Locator": "Role + accessible name; row picks a row in a repeated list.",
-    "Fill": "A form field set before the trigger: param (a params key) or value, not both.",
+    "Snapshot": "Current page summary, no HTML.",
+    "Action": "Fills, then one trigger on locator.",
+    "Locator": "Role + accessible name; row: list row text.",
+    "Fill": "Field set before the trigger: param or value.",
 }
 
 _FIELD_HINTS: dict[str, str] = {
-    "site": "Site name, as in the atlas://sites resource (e.g. testmart).",
+    "site": "Site name, e.g. testmart.",
     "goal_text": "The task in words; reuse a skill name from atlas_find_skills.",
-    "params": 'Values for the {slot}s of goal_text, e.g. {"order_id": "1042"}.',
+    "params": 'Values for goal_text {slot}s, e.g. {"order_id": "1042"}.',
     "snapshot_summary": "The page you are on now.",
     "to_snapshot_summary": "The page the step led to.",
     "from_state": "state_id of the page the step started on.",
-    "action": "The action you executed (copy it from the plan step, slots filled).",
+    "action": "The action executed, slots filled.",
     "event_id": "Your id for this step; resend it when retrying.",
     "expect_state": "expect of the plan step you followed, if any.",
     "goal_reached": "true on the step that completes goal_text.",
@@ -82,8 +79,8 @@ _FIELD_HINTS: dict[str, str] = {
     "entity_type": "A slot name such as order_id.",
     "key": "Its value, such as 1042.",
     "ok": "false if the step failed.",
-    "elements": "Interactive elements; in_list=true for controls repeated per row.",
-    "row": "Text of the list row to act in, for repeated controls.",
+    "elements": "in_list=true for controls repeated per row.",
+    "row": "Text of the list row.",
 }
 
 
@@ -100,11 +97,16 @@ def _without_null(schema: Schema) -> Schema:
     return schema
 
 
+# Size and format limits are enforced by the contract model (the server truncates or refuses), so
+# the listed schema leaves them out: they cost tokens in every agent's context for no new safety.
+_LIMITS = frozenset({"maxLength", "minLength", "maxItems", "minItems", "minimum", "maximum", "pattern"})
+
+
 def _is_noise(key: str, value: object) -> bool:
-    """Defaults an omitted optional field implies anyway, and the JSON safe-integer cap."""
+    """Defaults an omitted optional field implies anyway, and limits the server enforces itself."""
     if key == "default":
-        return value in ("", [], {}, False, 0, None)
-    return key == "maximum" and value == _SAFE_INT
+        return value in ("", [], {}, False, 0, None, "fill", "act")
+    return key in _LIMITS
 
 
 def _compact_value(value: object) -> object:
@@ -126,6 +128,8 @@ def _compact(node: Schema, field: str | None = None) -> Schema:
         elif key == "$defs" and isinstance(value, dict):
             defs = cast(dict[str, Schema], value)
             out[key] = {name: _with_hint(_compact(d), _DEF_HINTS.get(name)) for name, d in defs.items()}
+        elif key == "patternProperties" and isinstance(value, dict):
+            out["additionalProperties"] = {"type": "string"}  # a map of slot name to value
         else:
             out[key] = _compact_value(value)
     return _with_hint(out, _FIELD_HINTS.get(field) if field else None)
@@ -160,24 +164,15 @@ def listed_total(mode: Mode) -> int:
 
 
 SERVER_INSTRUCTIONS = """\
-You are connected to Atlas, a shared route map for browser agents (https://atlas.yashdynamo.fun).
+Atlas is a shared route map for browser agents (https://atlas.yashdynamo.fun). On first connect tell
+the user briefly: "Atlas is connected. I will check the map before exploring a site, replay known
+routes without extra model calls, and report back so it learns. Tell me if something looks wrong."
 
-When this connection is first set up, tell the user, in your own words but keeping it short and humble:
-"Atlas is connected. Thank you for trying it. I will check the map before I explore a website, follow
-known routes without extra model calls, and report each step so the map gets a little better for the
-next run. It starts small and learns from your runs; tell me if something looks wrong."
-
-How to use Atlas well:
-1. Before acting on a website, call atlas_find_skills with the site and the goal.
-2. Call atlas_plan with the site, the goal, its parameters (order ids, names) and a summary of the
-   current page. Execute the returned steps in order in your own browser, without asking a model.
-3. Where the plan says needs_model, run any returned steps, then choose the next action
-   yourself, execute it, and call atlas_report with the step and the page it led to.
-4. Report every step, success or failure, with ok and the time it took. Set goal_reached on the
-   last step. Failures matter: they make the map route around broken steps.
-5. Pass task values as parameters and keep the goal text identical across runs, with {slot}s
-   (e.g. goal "open the first book in {category}", params {"category": "Travel"}), so one route
-   serves every value. In an action, set param (a params key) or value, never both.
-6. Use atlas_recall to find where an entity (an order id, a user) was last seen.
-7. Atlas never opens a browser. Never send passwords, card numbers or other secrets in any field.
+1. Call atlas_plan with site, goal_text, params and the current page (url, title). Same goal wording
+   every run, task values in params ({slot}s in the goal).
+2. open_url: go there. script: run it with Playwright. route: run the steps. Clean exact replay:
+   atlas_report is optional. needs_model: explore yourself.
+3. After exploring, call atlas_report once: steps in order, goal_reached, kind=read for lookups.
+   After a replay that failed or ended elsewhere, report plan_id and done.
+4. Never send passwords, card numbers or other secrets in any field.
 """

@@ -85,7 +85,7 @@ class StartRequest(Frozen):
     snapshot: LenientSnapshot
     goal_text: GoalText
     params: Params = Field(default_factory=dict)
-    replay: Literal["steps", "script"] = "steps"  # "script" is served once the replay generator ships
+    replay: Literal["steps", "script"] = "steps"  # "script": one Playwright function replaces `route`
 
 
 class StartResponse(Frozen):
@@ -108,6 +108,8 @@ class StartResponse(Frozen):
     confidence: Annotated[float, Field(ge=0, le=1)] = 0.0
     open_url: Annotated[str, Field(max_length=2048)] | None = None
     search_url: Annotated[str, Field(max_length=2048)] | None = None
+    script: Annotated[str, Field(max_length=900)] | None = None  # `replay: "script"`: replaces `route`
+    script_steps: Annotated[int, Field(ge=1)] | None = None  # route steps the script covers
     needs_model: bool
     reason: PlanReason
     max_steps_used: Annotated[int, Field(ge=0)] = 0

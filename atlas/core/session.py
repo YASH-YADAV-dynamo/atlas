@@ -40,7 +40,7 @@ from atlas.contracts.types import (
     RouteStep,
     Snapshot,
 )
-from atlas.core import goals, learner, memo, planner
+from atlas.core import goals, learner, memo, planner, replay
 from atlas.core import locate as locating
 from atlas.core.blocked import blocked_reason, unlearned_result
 from atlas.core.ids import goal_id, transition_id
@@ -125,8 +125,15 @@ def start(
     max_steps_cap: int = MAX_ROUTE_STEPS,
     path_count: int = 5,
     issued: IssuedPlans = ISSUED,
+    final_step_varies: Callable[[tuple[int, ...], tuple[RouteStep, ...]], bool] | None = None,
+    script_fits: Callable[[str], bool] | None = None,
 ) -> StartResponse:
-    """Locate, match the goal, plan, and look up the memo. A read-only key stores nothing."""
+    """Locate, match the goal, plan, and look up the memo. A read-only key stores nothing.
+
+    `final_step_varies(targets, route)`: true when the route's last step is a literal pick that
+    differed between earlier successful runs, so it is cut (MCP uses it).
+    `script_fits`: the caller's size check for a script.
+    """
     blocked = blocked_reason(request.snapshot)
     if blocked is not None:  # never stored, never matched to a known page
         seen = unlearned_result(store, ns, request.site, request.snapshot, request.params, blocked)
@@ -159,6 +166,12 @@ def start(
         path_count=path_count,
     )
 
+    route = result.route
+    needs_model, reason = result.needs_model, result.reason
+    if route and final_step_varies is not None and final_step_varies(found.targets, route):
+        route = route[:-1]  # replaying one of the earlier literal picks would be wrong
+        needs_model, reason = True, PlanReason.MISSING_PARAMS
+
     key = goal_key(request.goal_text, params)
     candidates = [goal_id(ns, request.site, key)]
     if found.automatic and found.goal is not None and found.goal != key:
@@ -169,11 +182,15 @@ def start(
     if remembered is not None and remembered[1] == 0:  # the caller's own wording has a memo
         match, goal = "exact", None
 
-    served = bool(result.route) or open_url is not None
+    served = open_url is not None or (bool(route) and not needs_model)
     search_url = None
-    if not served and result.reason is PlanReason.UNKNOWN_GOAL:
+    if not route and open_url is None and reason is PlanReason.UNKNOWN_GOAL:
         search_url = memo.search_entry(store, ns, request.site)
-    plan_id = issued.issue(ns, request.site, located.state_id, key, params, result.route) if served else None
+    issuing = bool(route) or open_url is not None
+    plan_id = issued.issue(ns, request.site, located.state_id, key, params, route) if issuing else None
+    script = None
+    if request.replay == "script" and route and not needs_model:
+        script = replay.build_script(route, params, fits=script_fits)
     return StartResponse(
         state_id=located.state_id,
         known=located.known,
@@ -182,12 +199,14 @@ def start(
         match=match,
         goal=goal,
         params=result.params,
-        route=result.route,
+        route=() if script is not None else route,
         confidence=result.confidence,
         open_url=open_url,
         search_url=search_url,
+        script=script.text if script is not None else None,
+        script_steps=script.steps if script is not None else None,
         needs_model=not served,
-        reason=PlanReason.ROUTE_FOUND if served else result.reason,
+        reason=PlanReason.ROUTE_FOUND if served else reason,
         max_steps_used=result.max_steps_used,
     )
 

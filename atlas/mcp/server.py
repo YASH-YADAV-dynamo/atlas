@@ -149,7 +149,8 @@ def build_server(
                 result = await asyncio.get_running_loop().run_in_executor(executor, method, request)
             stored = writes and not getattr(result, "duplicate", True)
             if principal is not None and quota is not None and stored:
-                quota.note_event(principal)
+                for _ in range(max(1, getattr(result, "learned", None) or 1)):
+                    quota.note_event(principal)
         except (AtlasError, ValidationError) as error:
             return _error(str(error) if isinstance(error, AtlasError) else _validation_message(error))
         return types.CallToolResult(content=[types.TextContent(type="text", text=tool_text(result))])

@@ -16,10 +16,11 @@ import json
 import math
 from datetime import datetime
 from enum import StrEnum
-from typing import Annotated, Self
+from typing import Annotated, Literal, Self, cast
 
 from pydantic import BaseModel, Field, model_validator
 
+from atlas.contracts.api_models import PlanId
 from atlas.contracts.types import (
     Action,
     EventId,
@@ -212,11 +213,17 @@ class PlanToolInput(Frozen):
     snapshot_summary: LenientSnapshot
     goal_text: GoalText
     params: Params = Field(default_factory=dict)
+    replay: Literal["steps", "script"] = "steps"  # "script": one Playwright function replaces route
 
 
 class PlanToolOutput(Frozen):
     state_id: StateId
+    plan_id: PlanId | None = None  # name of the issued route, script or URL: send it to atlas_report
     route: Annotated[tuple[BriefStep, ...], Field(max_length=MAX_BRIEF_STEPS)] = ()
+    open_url: Annotated[str, Field(max_length=2048)] | None = None  # read goals: go here, skip the route
+    script: Annotated[str, Field(max_length=900)] | None = None  # replay="script": replaces route
+    script_steps: Annotated[int, Field(ge=1)] | None = None
+    search_url: Annotated[str, Field(max_length=2048)] | None = None  # this site's search, with {q}
     needs_model: bool
     reason: PlanReason
     truncated: bool = False
@@ -244,12 +251,84 @@ class ReportToolInput(Frozen):
     kind: GoalKind = "act"  # "read": a lookup, nothing on the site changed
 
 
+MAX_REPORT_STEPS = 12
+
+
+class ReportStep(Frozen):
+    """One executed step of a batch: put the form fills in the action that submits them."""
+
+    action: Action
+    to: LenientSnapshot
+    ok: bool = True
+    ms: Annotated[int, Field(ge=0, le=600_000)] = 0
+
+
+class ReportInput(Frozen):
+    """Exactly one of: action (one step), steps (a batch), plan_id (a replay outcome)."""
+
+    site: Site
+    ok: bool
+    from_state: StateId | None = None
+    action: Action | None = None
+    to_snapshot_summary: LenientSnapshot | None = None
+    steps: Annotated[tuple[ReportStep, ...], Field(max_length=MAX_REPORT_STEPS)] = ()
+    plan_id: PlanId | None = None
+    done: Annotated[int, Field(ge=0, le=64)] | None = None
+    ms: Annotated[int, Field(ge=0, le=600_000)] = 0
+    event_id: EventId | None = None
+    expect_state: StateId | None = None
+    goal_text: GoalText | None = None
+    params: Params = Field(default_factory=dict)
+    goal_reached: bool = False
+    run_id: EventId | None = None
+    kind: GoalKind = "act"  # "read": reaching the page was the goal, nothing on the site changed
+
+    @model_validator(mode="after")
+    def _one_form(self) -> Self:
+        single = self.action is not None
+        batch = bool(self.steps)
+        replay = self.plan_id is not None
+        if single + batch + replay != 1:
+            raise ValueError("give exactly one of: action, steps, plan_id")
+        if single and (self.from_state is None or self.to_snapshot_summary is None):
+            raise ValueError("a single step needs from_state, action and to_snapshot_summary")
+        if batch and (self.from_state is None or self.to_snapshot_summary is not None):
+            raise ValueError("a batch needs from_state and steps (the last step's page is the final one)")
+        if self.done is not None and not replay:
+            raise ValueError("done needs plan_id")
+        if self.goal_reached and self.goal_text is None:
+            raise ValueError("goal_reached needs goal_text")
+        return self
+
+    def as_single(self) -> ReportToolInput:
+        """The legacy single-step view (only valid for the single form)."""
+        assert self.action is not None and self.from_state is not None
+        assert self.to_snapshot_summary is not None
+        return ReportToolInput(
+            site=self.site,
+            from_state=self.from_state,
+            action=self.action,
+            to_snapshot_summary=self.to_snapshot_summary,
+            ok=self.ok,
+            ms=self.ms,
+            event_id=self.event_id,
+            expect_state=self.expect_state,
+            goal_text=self.goal_text,
+            params=self.params,
+            goal_reached=self.goal_reached,
+            run_id=self.run_id,
+            kind=self.kind,
+        )
+
+
 class ReportToolOutput(Frozen):
     state_id: StateId
     known: bool
     duplicate: bool
     event_id: EventId  # echo, so a retry can reuse it
     blocked: str | None = None  # a blocked or error page: not learned
+    learned: Annotated[int, Field(ge=0)] | None = None  # steps stored (batch and replay forms)
+    goal: GoalText | None = None  # the goal key stored
 
 
 # ---- resources (read-only context a client can attach) ----------------------------------
@@ -346,9 +425,9 @@ TOOLS: tuple[ToolSpec, ...] = (
     ),
     ToolSpec(
         name="atlas_report",
-        description="For agents with their own browser: report one executed step and the page it led to, "
-        "so the map learns it. Safe to retry with the same event_id.",
-        input_model=ReportToolInput,
+        description="For agents with their own browser: report what you executed (one step, a batch "
+        "of steps, or a plan_id replay outcome) so the map learns it. Safe to retry with the same event_id.",
+        input_model=ReportInput,
         output_model=ReportToolOutput,
         modes=frozenset({Mode.PLANNER}),
     ),
@@ -359,7 +438,17 @@ def tools_for(mode: Mode) -> tuple[ToolSpec, ...]:
     return tuple(tool for tool in TOOLS if mode in tool.modes)
 
 
+def _untitled(node: object) -> object:
+    """The schema without pydantic's generated `title` strings (clients do not need them)."""
+    if isinstance(node, dict):
+        items = cast(dict[str, object], node)
+        return {k: _untitled(v) for k, v in items.items() if not (k == "title" and isinstance(v, str))}
+    if isinstance(node, list):
+        return [_untitled(v) for v in cast(list[object], node)]
+    return node
+
+
 def definition_tokens(tool: ToolSpec) -> int:
-    """Context cost of one tool definition: name, description and input schema."""
-    schema = json.dumps(tool.input_model.model_json_schema(), separators=(",", ":"))
+    """Context cost of one tool definition: name, description and input schema (no titles)."""
+    schema = json.dumps(_untitled(tool.input_model.model_json_schema()), separators=(",", ":"))
     return count_tokens(tool.name + tool.description + schema)
