@@ -40,8 +40,9 @@ DESCRIPTIONS: dict[str, str] = {
         "Call on the page you are on whenever you need the next steps. Send your browser's page "
         "summary (url, title, interactive elements; no HTML). Returns state_id (pass as from_state "
         f"to atlas_report) and up to {MAX_BRIEF_STEPS} steps: action (fill {{slot}}s from params) "
-        "and expect, the state_id it should reach. needs_model=true: the map ends here; pick the "
-        f"action yourself, then atlas_report it. {_BUDGET}"
+        "and expect, the state_id it should reach. needs_model=true: the map ends after the "
+        "returned steps (possibly none): run them, then pick the next action yourself and "
+        f"atlas_report it. {_BUDGET}"
     ),
     "atlas_report": (
         "Call after every step you executed in your own browser, ok=false for failures. "
@@ -63,7 +64,7 @@ _DEF_HINTS: dict[str, str] = {
     "Snapshot": "Your browser's current page, summarised. No HTML.",
     "Action": "One step: optional form fills, then one trigger on locator.",
     "Locator": "Role + accessible name; row picks a row in a repeated list.",
-    "Fill": "A form field set before the trigger: param (a params key) or value.",
+    "Fill": "A form field set before the trigger: param (a params key) or value, not both.",
 }
 
 _FIELD_HINTS: dict[str, str] = {
@@ -170,11 +171,13 @@ How to use Atlas well:
 1. Before acting on a website, call atlas_find_skills with the site and the goal.
 2. Call atlas_plan with the site, the goal, its parameters (order ids, names) and a summary of the
    current page. Execute the returned steps in order in your own browser, without asking a model.
-3. Where the plan says needs_model (the map ends), choose one action yourself, execute it, and call
-   atlas_report with the step and the page it led to.
+3. Where the plan says needs_model, run any returned steps, then choose the next action
+   yourself, execute it, and call atlas_report with the step and the page it led to.
 4. Report every step, success or failure, with ok and the time it took. Set goal_reached on the
    last step. Failures matter: they make the map route around broken steps.
-5. Pass task values as parameters, never baked into the goal text, so one route serves every value.
+5. Pass task values as parameters and keep the goal text identical across runs, with {slot}s
+   (e.g. goal "open the first book in {category}", params {"category": "Travel"}), so one route
+   serves every value. In an action, set param (a params key) or value, never both.
 6. Use atlas_recall to find where an entity (an order id, a user) was last seen.
 7. Atlas never opens a browser. Never send passwords, card numbers or other secrets in any field.
 """

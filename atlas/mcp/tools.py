@@ -39,14 +39,15 @@ from atlas.contracts.types import (
     PlanReason,
     ReportEvent,
     ReportResult,
+    RouteStep,
     Snapshot,
     Transition,
 )
 from atlas.core.cost import reliability
-from atlas.core.ids import entity_id
+from atlas.core.ids import entity_id, goal_id
 from atlas.core.learner import report as learn
 from atlas.core.locate import locate
-from atlas.core.params import bind_action, required_slots, templatise_action
+from atlas.core.params import bind_action, goal_key, required_slots, templatise_action
 from atlas.core.planner import plan as plan_route
 from atlas.core.signature import state_from_snapshot
 from atlas.mcp.budget import enforce_budget
@@ -547,19 +548,39 @@ class AtlasTools:
                 site=request.site, state_id=state_id, goal_text=request.goal_text, params=request.params
             ),
         )
+        route = list(planned.route)
+        needs_model, reason = planned.needs_model, planned.reason
+        if route and self._final_step_varies(request, route):
+            # The goal was reached by different literal clicks from this page on earlier runs
+            # (e.g. "the first book" of each category): replaying one of them would be wrong.
+            route.pop()
+            needs_model, reason = True, PlanReason.MISSING_PARAMS
         steps = tuple(
             m.BriefStep(action=s.action, expect=s.expect_state, reliability=s.reliability)
-            for s in planned.route
+            for s in route
         )
         return enforce_budget(
             m.PlanToolOutput(
                 state_id=state_id,
                 route=steps[: m.MAX_BRIEF_STEPS],
-                needs_model=planned.needs_model,
-                reason=planned.reason,
+                needs_model=needs_model,
+                reason=reason,
                 truncated=len(steps) > m.MAX_BRIEF_STEPS,
             )
         )
+
+    def _final_step_varies(self, request: m.PlanToolInput, route: list[RouteStep]) -> bool:
+        """True when the last step is a literal pick that differed between successful runs."""
+        if required_slots(route[-1].action):
+            return False  # bound from the task's parameters, so it already varies correctly
+        gid = goal_id(self._ns, request.site, goal_key(request.goal_text, request.params))
+        targets = self._store.goal_targets(self._ns, gid)
+        actions = {
+            t.action.model_dump_json()
+            for t in (self._store.get_transition(self._ns, tid) for tid in targets)
+            if t is not None and not required_slots(t.action)
+        }
+        return len(actions) > 1
 
     def report(self, request: m.ReportToolInput) -> m.ReportToolOutput:
         if self._read_only:

@@ -182,6 +182,24 @@ connected. Keep the key secret and never print it in full.
 From then on, whenever you work on a website, follow "Use Atlas effectively"
 in the same file: plan first, report every step.</code></pre></div>
   <p class="fine">Prefer to do it by hand? The steps are below. Your key is shown once and stored only as a keyed hash.</p>
+  <h3>Then tell it how to use Atlas</h3>
+  <p class="lede">Paste this once Atlas is connected, or keep it in your agent's system prompt or project rules (CLAUDE.md, .cursorrules, AGENTS.md). It is the short version of "Use Atlas effectively".</p>
+  <div class="codeblock"><header><span>Prompt: using Atlas</span><button class="copy" type="button" data-copy="c-use">Copy</button></header>
+<pre><code id="c-use">When you work on a website, use the Atlas MCP tools:
+1. Write the goal once with {slots} and pass the values as params, e.g.
+   goal_text "Open the first book in {category}", params {"category": "Travel"}.
+   Keep the goal text identical every time you repeat the task.
+2. Call atlas_find_skills with the site and goal, then atlas_plan with the
+   site, goal, params and a short page summary (url, title, interactive elements).
+3. Run the returned steps in your own browser without stopping to think.
+   If a step does not reach its expected state, stop following the plan.
+4. If needs_model is true, run any steps it returned, then choose the next
+   action yourself.
+5. After every step call atlas_report with from_state, the action, the new
+   page summary, ok and ms. In an action set param OR value, never both.
+   On the step that finishes the task, add goal_text, params and
+   goal_reached=true.
+6. Never send passwords, card numbers or other secrets to Atlas.</code></pre></div>
 </section>
 
 <section class="block wrap" id="connect">

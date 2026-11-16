@@ -51,6 +51,33 @@ def _error(message: str) -> types.CallToolResult:
     return types.CallToolResult(content=[types.TextContent(type="text", text=message[:300])], is_error=True)
 
 
+def _one_source(step: dict[str, Any], params: dict[str, Any]) -> None:
+    """Agents often send both `param` and `value`; keep the param when it is a known task
+    parameter (the value is just its binding), else keep the literal value."""
+    if step.get("param") is not None and step.get("value") is not None:
+        if step["param"] in params:
+            step["value"] = None
+        else:
+            step["param"] = None
+
+
+def _normalise_arguments(arguments: dict[str, Any]) -> dict[str, Any]:
+    action = arguments.get("action")
+    if not isinstance(action, dict):
+        return arguments
+    params = arguments.get("params")
+    params = params if isinstance(params, dict) else {}
+    action = dict(action)
+    _one_source(action, params)
+    fills = action.get("fills")
+    if isinstance(fills, list):
+        action["fills"] = [dict(f) for f in fills]
+        for fill in action["fills"]:
+            if isinstance(fill, dict):
+                _one_source(fill, params)
+    return {**arguments, "action": action}
+
+
 def _validation_message(error: ValidationError) -> str:
     first = error.errors()[0]
     where = ".".join(str(part) for part in first["loc"]) or "arguments"
@@ -101,7 +128,7 @@ def build_server(
         if spec is None:
             return _error(f"unknown tool {params.name[:60]}; available: {', '.join(specs)}")
         try:
-            request = spec.input_model.model_validate(params.arguments or {})
+            request = spec.input_model.model_validate(_normalise_arguments(dict(params.arguments or {})))
         except ValidationError as error:
             return _error(_validation_message(error))
         try:

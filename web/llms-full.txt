@@ -65,9 +65,10 @@ Just want to look first? `GET https://atlas.yashdynamo.fun/v1/mcp-info` returns 
 
 - Ask before you explore: call `atlas_find_skills` with the site and goal, then `atlas_plan` from the current page.
 - Follow the plan exactly: execute the returned steps in order in your own browser, with no model call for those steps.
-- Think only at the frontier: when the plan says `needs_model`, choose one action yourself, execute it, and report it. Then plan again.
+- Think only at the frontier: when the plan says `needs_model`, run any steps it returned, then choose one action yourself, execute it, and report it. Then plan again.
 - Report every step, success or failure, with `ok` and the time it took. Set `goal_reached: true` on the last step. Failures are as useful as successes: they raise that step's cost so later plans route around it.
-- Keep values out of goal text: write "refund order" with `params: {"order_id": "1042"}`, not "refund order 1042". One learned route then serves every order.
+- Keep values out of goal text: write "refund order" with `params: {"order_id": "1042"}`, not "refund order 1042". Keep the goal text identical across runs (`{slot}`s are fine). One learned route then serves every order.
+- In an action or fill, set `param` (a params key) or `value`, never both.
 - Describe the page the same way each time (URL plus interactive elements by role and name), so the same page maps to the same state.
 - Use `atlas_recall` to find where an entity (an order id, a user) was last seen instead of searching again.
 - Repeats get cheaper: the second run of a known task should need zero model calls. If it does not, report the failed step instead of working around it silently.
