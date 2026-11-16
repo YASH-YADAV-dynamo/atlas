@@ -7,6 +7,7 @@ from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
 
+from fastapi.responses import RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
 from atlas.adapters.browser.local_playwright import LocalPlaywright
@@ -69,6 +70,17 @@ app.include_router(
     )
 )
 mount_mcp(app, _store, _clock, _settings, _keys)
+# Common misspellings of the agent guide go to the real file instead of a 404.
+_LLMS_ALIASES = {"/llm.txt": "/llms.txt", "/llms.text": "/llms.txt", "/llm-full.txt": "/llms-full.txt",
+                 "/llms_full.txt": "/llms-full.txt", "/LLMS.txt": "/llms.txt", "/llms": "/llms.txt"}
+
+
+def _alias_route(target: str):  # noqa: ANN202
+    return lambda: RedirectResponse(target, status_code=301)
+
+
+for _alias, _target in _LLMS_ALIASES.items():
+    app.add_api_route(_alias, _alias_route(_target), methods=["GET"], include_in_schema=False)
 _web = Path(__file__).resolve().parents[2] / "web"
 if _web.is_dir():  # mounted last so it never shadows the API routes
     app.mount("/", StaticFiles(directory=_web, html=True), name="web")
