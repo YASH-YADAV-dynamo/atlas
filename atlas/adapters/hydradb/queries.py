@@ -34,6 +34,14 @@ GET_STATE = (
     "RETURN n.id AS id, n.site AS site, n.sig AS sig, n.url_tmpl AS url_tmpl, n.title AS title"
 )
 
+# Tolerant locate (SHIP_PLAN 4.1): a token fingerprint per state and a newest-first marker `tok_at`
+# (ISO-8601 UTC text, so text order is time order). Sorting and the limit are applied in the adapter.
+SET_STATE_TOKENS = "MATCH (n:State {id: $id}) SET n.tok = $tok, n.tok_at = $at"
+STATES_BY_URL = (
+    "MATCH (n:State) WHERE n.ns = $ns AND n.site = $site AND n.url_tmpl = $url_tmpl "
+    "RETURN n.id AS id, n.tok AS tok, n.tok_at AS at"
+)
+
 # A transition is an action node between two ACT edges: (from)-[:ACT {cost}]->(a)-[:ACT {cost: 0}]->(to).
 MERGE_TRANSITION_IN = "MERGE (s {id: $from_state})-[:ACT]->(a {id: $tid})"
 MERGE_TRANSITION_OUT = "MERGE (a {id: $tid})-[:ACT]->(t {id: $to_state})"

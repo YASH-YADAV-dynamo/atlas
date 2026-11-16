@@ -38,10 +38,10 @@ from atlas.contracts.api_models import (
 from atlas.contracts.errors import AtlasError, UnauthorizedError, http_status_for
 from atlas.contracts.mcp_models import Mode, tools_for
 from atlas.contracts.ports import Clock, GraphStore, MapStore, RouteStore
-from atlas.contracts.types import MapView, Site, SleepReport
+from atlas.contracts.types import MapView, PlanReason, Site, SleepReport
 from atlas.core import changes, learner, planner, sleep
-from atlas.core.locate import locate
-from atlas.core.signature import state_from_snapshot
+from atlas.core import locate as locating
+from atlas.core.blocked import blocked_reason, unlearned_result
 from atlas.log import log_event
 from atlas.mcp.keys import (
     KeyRegistry,
@@ -92,6 +92,7 @@ def create_app(
     routes = cast(RouteStore, store)
     skills = cast(sleep.SleepStore, store)
     registry = keys if keys is not None else KeyRegistry(settings)
+    locating.configure(min_jaccard=settings.locate_min_jaccard)
     limiter = RateLimiter(settings.tenant_requests_per_minute)
     # No admin key configured (local development): unauthenticated calls act as the admin.
     open_mode = not registry.has_admin_key
@@ -147,17 +148,25 @@ def create_app(
 
     # ---- the Route API, per principal --------------------------------------------------------
 
-    @v1.post(LOCATE_PATH)
+    @v1.post(LOCATE_PATH, response_model_exclude_none=True)
     def post_locate(request: LocateRequest, caller: Caller) -> LocateResponse:
         ns = caller.namespace
-        if caller.read_only:  # a read-only key never records a newly seen page
-            state_id = state_from_snapshot(ns, request.site, request.snapshot).id
-            return LocateResponse(state_id=state_id, known=store.get_state(ns, state_id) is not None)
-        result = locate(store, ns, request.site, request.snapshot)
-        return LocateResponse(state_id=result.state_id, known=result.known)
+        blocked = blocked_reason(request.snapshot)
+        if blocked is not None:  # never stored, never matched to a known page
+            unlearned = unlearned_result(store, ns, request.site, request.snapshot, request.params, blocked)
+            return LocateResponse.model_validate(unlearned.model_dump())
+        seen = locating.resolve(store, ns, request.site, request.snapshot, request.params)
+        # A read-only key never records a newly seen page (nor backfills a fingerprint).
+        result = seen.result() if caller.read_only else locating.commit(store, ns, seen)
+        return LocateResponse.model_validate(result.model_dump())
 
-    @v1.post(PLAN_PATH)
+    @v1.post(PLAN_PATH, response_model_exclude_none=True)
     def post_plan(request: PlanRequest, caller: Caller) -> PlanResponse:
+        blocked = blocked_reason(request.snapshot) if request.snapshot is not None else None
+        if blocked is not None:
+            return PlanResponse(
+                needs_model=True, reason=PlanReason.NO_ROUTE_WITHIN_MAX_STEPS, blocked=blocked
+            )
         result = planner.plan(
             store,
             caller.namespace,
@@ -168,12 +177,12 @@ def create_app(
         )
         return PlanResponse.model_validate(result.model_dump())
 
-    @v1.post(REPORT_PATH)
+    @v1.post(REPORT_PATH, response_model_exclude_none=True)
     def post_report(request: ReportRequest, caller: Caller) -> ReportResponse:
         caller.require_write("report")
         registry.check_event_quota(caller)
         ns = caller.namespace
-        folded = hold_or_fold(ns, request)
+        folded = request if blocked_reason(request.to_snapshot) else hold_or_fold(ns, request)
         if folded is None:  # a same-page form fill, folded into the next action from this page
             known = store.get_state(ns, request.from_state) is not None
             return ReportResponse(state_id=request.from_state, known=known, duplicate=False)
@@ -183,7 +192,9 @@ def create_app(
         change = changes.note_report(routes, clock, ns, result)
         if change is not None:
             log_event("flow_change", transition_id=change.transition_id)
-        return ReportResponse(state_id=result.state_id, known=result.known, duplicate=result.duplicate)
+        return ReportResponse(
+            state_id=result.state_id, known=result.known, duplicate=result.duplicate, blocked=result.blocked
+        )
 
     @v1.get(MAP_PATH)
     def get_map(site: Site, caller: Caller) -> MapView:

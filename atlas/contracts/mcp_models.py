@@ -24,15 +24,17 @@ from atlas.contracts.types import (
     Action,
     EventId,
     Frozen,
+    GoalKind,
+    GoalMatchKind,
     GoalText,
     Params,
     PlanReason,
     ShortText,
     Site,
     Slot,
-    Snapshot,
     StateId,
 )
+from atlas.core.snapshot import LenientSnapshot
 
 MCP_RESPONSE_TOKEN_BUDGET = 400
 MCP_DEFINITIONS_TOKEN_BUDGET = {"runner": 1000, "planner": 2500}  # all tool definitions of a mode
@@ -207,7 +209,7 @@ class RecallOutput(Frozen):
 
 class PlanToolInput(Frozen):
     site: Site
-    snapshot_summary: Snapshot
+    snapshot_summary: LenientSnapshot
     goal_text: GoalText
     params: Params = Field(default_factory=dict)
 
@@ -218,6 +220,10 @@ class PlanToolOutput(Frozen):
     needs_model: bool
     reason: PlanReason
     truncated: bool = False
+    blocked: str | None = None  # a blocked or error page: not learned, ask the model
+    match: GoalMatchKind | None = None  # how the goal resolved (exact, same_words, similar)
+    goal: GoalText | None = None  # the stored goal when the wording differed: reuse it
+    params: Params | None = None  # values read out of the goal text
 
 
 class ReportToolInput(Frozen):
@@ -226,7 +232,7 @@ class ReportToolInput(Frozen):
     site: Site
     from_state: StateId
     action: Action
-    to_snapshot_summary: Snapshot
+    to_snapshot_summary: LenientSnapshot
     ok: bool
     ms: Annotated[int, Field(ge=0, le=600_000)] = 0
     event_id: EventId | None = None
@@ -235,6 +241,7 @@ class ReportToolInput(Frozen):
     params: Params = Field(default_factory=dict)
     goal_reached: bool = False
     run_id: EventId | None = None
+    kind: GoalKind = "act"  # "read": a lookup, nothing on the site changed
 
 
 class ReportToolOutput(Frozen):
@@ -242,6 +249,7 @@ class ReportToolOutput(Frozen):
     known: bool
     duplicate: bool
     event_id: EventId  # echo, so a retry can reuse it
+    blocked: str | None = None  # a blocked or error page: not learned
 
 
 # ---- resources (read-only context a client can attach) ----------------------------------

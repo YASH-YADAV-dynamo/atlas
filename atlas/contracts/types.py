@@ -6,7 +6,14 @@ from datetime import datetime
 from enum import StrEnum
 from typing import Annotated, Literal, Self
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    SerializerFunctionWrapHandler,
+    model_serializer,
+    model_validator,
+)
 
 # Node ids are stable 53-bit hashes (ADR-0002): valid HydraDB vertex ids, exact in JSON and JS.
 MAX_ID = 2**53 - 1
@@ -62,6 +69,14 @@ class Snapshot(Frozen):
     title: ShortText = ""
     elements: Annotated[tuple[Element, ...], Field(max_length=400)] = ()
     text: Annotated[str, Field(max_length=4000)] = ""  # visible text for the model; never in sig
+    status: Annotated[int, Field(ge=100, le=599)] | None = None  # main-frame HTTP status, if known
+
+    @model_serializer(mode="wrap")
+    def _omit_unknown_status(self, handler: SerializerFunctionWrapHandler) -> dict[str, object]:
+        data: dict[str, object] = handler(self)
+        if data.get("status") is None:
+            data.pop("status", None)  # absent, not null: older clients and compact schemas never see it
+        return data
 
 
 class Locator(Frozen):
@@ -263,8 +278,13 @@ class MapView(Frozen):
 
 
 class LocateResult(Frozen):
+    """`matched` is set when a known page was recognised other than by its exact signature: a
+    "similar" known page (tolerant locate), or the known page for its "url" template."""
+
     state_id: StateId
     known: bool
+    matched: Literal["similar", "url"] | None = None
+    blocked: str | None = None  # a blocked or error page: nothing was stored for it
 
 
 class RouteStep(Frozen):
@@ -274,6 +294,10 @@ class RouteStep(Frozen):
     expect_state: StateId
     reliability: Annotated[float, Field(gt=0, lt=1)]
     last_verified: datetime | None = None
+
+
+GoalKind = Literal["act", "read"]
+GoalMatchKind = Literal["exact", "same_words", "similar"]
 
 
 class PlanReason(StrEnum):
@@ -295,6 +319,13 @@ class PlanResult(Frozen):
     needs_model: bool
     reason: PlanReason
     max_steps_used: Annotated[int, Field(ge=0)] = 0
+    # Goal matching (SHIP_PLAN 5). `match` is how the goal resolved; omitted when it did not.
+    # `goal` is the stored goal when the wording differed (reuse it next time). A "similar"
+    # match is only offered: no route, plan again with `goal` (and `params`) to accept it.
+    # `params` are values read out of the goal text (one-slot alignment).
+    match: GoalMatchKind | None = None
+    goal: GoalText | None = None
+    params: Params | None = None
 
     @model_validator(mode="after")
     def _consistent(self) -> Self:
@@ -325,6 +356,9 @@ class ReportEvent(Frozen):
     params: Params = Field(default_factory=dict)
     goal_reached: bool = False
     run_id: EventId | None = None  # same value for every step of one task run (enables skills)
+    # "read": reaching the page was the goal and nothing on the site changed. Only read goals
+    # are matched automatically by their words (SHIP_PLAN 5).
+    kind: GoalKind = "act"
 
     @model_validator(mode="after")
     def _goal_needs_text(self) -> Self:
@@ -340,6 +374,7 @@ class ReportResult(Frozen):
     known: bool
     duplicate: bool
     transitions: tuple[Transition, ...] = ()
+    blocked: str | None = None  # a blocked or error page: not learned
 
 
 class StepSource(StrEnum):

@@ -25,6 +25,7 @@ from typing import Any
 _CACHED_READS = frozenset(
     {
         "get_state",
+        "states_by_url",
         "goal_targets",
         "shortest_paths",
         "list_goals",

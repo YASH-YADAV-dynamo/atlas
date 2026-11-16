@@ -25,10 +25,10 @@ class Settings(BaseSettings):
     atlas_keys_path: str = "data/mcp_keys.json"  # durable tenant key store (hashes only)
     atlas_public_url: str | None = None  # e.g. https://atlas.example.com; else derived from the request
     tenant_max: int = 200  # self-serve tenants in total
-    tenant_keys_per_ip_day: int = 3
+    tenant_keys_per_ip_day: int = 10
     tenant_max_events: int = 5000  # reported steps stored per tenant
     tenant_max_plan_states: int = 2000  # new pages a private key may add to its map via plan
-    tenant_requests_per_minute: int = 120  # per key (per key and address for the demo key)
+    tenant_requests_per_minute: int = 300  # per key (per key and address for the demo key)
 
     # Exploration model, provider-agnostic: "anthropic" (SDK) or "openai" (any OpenAI-compatible
     # chat-completions endpoint at `model_base_url`). `model_api_key` falls back to the Anthropic key.
@@ -44,6 +44,7 @@ class Settings(BaseSettings):
     testmart_user: str = "admin"
     testmart_password: SecretStr = SecretStr("testmart")  # TestMart's dev-only default
     plan_max_steps: int = 8
+    locate_min_jaccard: float = 0.85  # tolerant locate: token-set similarity that counts as the same page
     plan_max_steps_cap: int = 8  # engine limit per path query (ADR-0005)
     plan_path_count: int = 5
     run_max_steps: int = 25

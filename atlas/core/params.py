@@ -6,7 +6,7 @@ import re
 from collections.abc import Callable, Mapping
 
 from atlas.contracts.errors import MissingParamError
-from atlas.contracts.types import Action, Fill, Locator
+from atlas.contracts.types import Action, ActionKind, Fill, Locator
 
 _SLOT_PATTERN = r"\{[a-z][a-z0-9_]*\}"
 _SLOT = re.compile(r"\{([a-z][a-z0-9_]*)\}")
@@ -53,22 +53,39 @@ def _map_locator(locator: Locator, convert: Callable[[str], str]) -> Locator:
 
 
 def templatise_action(action: Action, params: Mapping[str, str]) -> Action:
-    """Replace parameter values with their slots (literal values -> `param`, names -> `{slot}`)."""
+    """Replace parameter values with their slots.
+
+    A value equal to a parameter (ignoring case) becomes `param`; a value that contains one
+    keeps the rest literal around a `{slot}` ("hrithik roshan awards" -> "{person} awards").
+    Locator names get `{slot}` wherever a value appears, ignoring case (SHIP_PLAN 5).
+    """
     mapping = _value_to_slot(params)
+    folded: dict[str, str] = {}
+    for value, slot in mapping.items():
+        folded.setdefault(value.lower(), slot)
 
     def names(text: str) -> str:
-        return _replace_values(text, mapping)
+        return _replace_values(text, mapping, ignore_case=True)
+
+    def literal(value: str | None) -> dict[str, object]:
+        if value is None:
+            return {}
+        if value in mapping:
+            return {"param": mapping[value], "value": None}
+        if value.lower() in folded:
+            return {"param": folded[value.lower()], "value": None}
+        templated = names(value)
+        return {"value": templated} if templated != value else {}
 
     fills: list[Fill] = []
     for fill in action.fills:
         update: dict[str, object] = {"locator": _map_locator(fill.locator, names)}
-        if fill.value is not None and fill.value in mapping:
-            update.update(param=mapping[fill.value], value=None)
+        update.update(literal(fill.value))
         fills.append(fill.model_copy(update=update))
     locator = _map_locator(action.locator, names) if action.locator is not None else None
     update = {"locator": locator, "fills": tuple(fills)}
-    if action.value is not None and action.value in mapping:
-        update.update(param=mapping[action.value], value=None)
+    if action.kind is not ActionKind.GOTO:  # a goto path is identity, handled by url templates
+        update.update(literal(action.value))
     return action.model_copy(update=update)
 
 
@@ -84,8 +101,12 @@ def required_slots(action: Action) -> frozenset[str]:
     for locator in locators:
         slots |= _slots_in(locator.name) | _slots_in(locator.row)
     slots.update(fill.param for fill in action.fills if fill.param is not None)
+    for fill in action.fills:
+        slots |= _slots_in(fill.value)
     if action.param is not None:
         slots.add(action.param)
+    if action.kind is not ActionKind.GOTO:
+        slots |= _slots_in(action.value)
     return frozenset(slots)
 
 
@@ -105,9 +126,13 @@ def bind_action(action: Action, params: Mapping[str, str]) -> Action:
         update: dict[str, object] = {"locator": _map_locator(fill.locator, names)}
         if fill.param is not None:
             update.update(param=None, value=lookup(fill.param))
+        elif fill.value is not None:
+            update.update(value=names(fill.value))
         fills.append(fill.model_copy(update=update))
     locator = _map_locator(action.locator, names) if action.locator is not None else None
     update = {"locator": locator, "fills": tuple(fills)}
     if action.param is not None:
         update.update(param=None, value=lookup(action.param))
+    elif action.value is not None and action.kind is not ActionKind.GOTO:
+        update.update(value=names(action.value))
     return action.model_copy(update=update)

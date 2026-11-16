@@ -9,6 +9,7 @@ import threading
 from collections import Counter, defaultdict
 from dataclasses import dataclass, field
 
+from atlas.contracts.ports import STATES_BY_URL_LIMIT
 from atlas.contracts.types import (
     ChangeEvent,
     Entity,
@@ -40,6 +41,7 @@ class _Hop:
 @dataclass
 class _Namespace:
     states: dict[int, State] = field(default_factory=dict)
+    tokens: dict[int, tuple[int, str]] = field(default_factory=dict)  # state id -> (sequence, fingerprint)
     events: dict[str, Observation] = field(default_factory=dict)
     shapes: dict[int, Observation] = field(default_factory=dict)  # first observation per transition
     evidence: dict[int, dict[str, Observation]] = field(default_factory=lambda: defaultdict(dict))
@@ -55,6 +57,7 @@ class InMemoryGraphStore:
     def __init__(self) -> None:
         self._spaces: defaultdict[str, _Namespace] = defaultdict(_Namespace)
         self._lock = threading.RLock()
+        self._sequence = 0
 
     def upsert_state(self, ns: str, state: State) -> bool:
         with self._lock:
@@ -66,6 +69,22 @@ class InMemoryGraphStore:
     def get_state(self, ns: str, state_id: int) -> State | None:
         with self._lock:
             return self._spaces[ns].states.get(state_id)
+
+    def set_state_tokens(self, ns: str, state_id: int, tok: str) -> None:
+        with self._lock:
+            self._sequence += 1
+            self._spaces[ns].tokens[state_id] = (self._sequence, tok)
+
+    def states_by_url(self, ns: str, site: str, url_tmpl: str) -> tuple[tuple[int, str], ...]:
+        with self._lock:
+            space = self._spaces[ns]
+            found = [
+                (space.tokens.get(s.id, (0, ""))[0], s.id, space.tokens.get(s.id, (0, ""))[1])
+                for s in space.states.values()
+                if s.site == site and s.url_tmpl == url_tmpl
+            ]
+        found.sort(key=lambda row: (-row[0], row[1]))
+        return tuple((sid, tok) for _, sid, tok in found[:STATES_BY_URL_LIMIT])
 
     def has_event(self, ns: str, event_id: str) -> bool:
         with self._lock:

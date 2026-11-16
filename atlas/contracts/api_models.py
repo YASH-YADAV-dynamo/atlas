@@ -15,9 +15,9 @@ from atlas.contracts.types import (
     Site,
     Skill,
     SleepLogEntry,
-    Snapshot,
     StateId,
 )
+from atlas.core.snapshot import LenientSnapshot
 
 LOCATE_PATH = "/v1/locate"
 PLAN_PATH = "/v1/plan"
@@ -31,7 +31,8 @@ HEALTH_PATH = "/healthz"
 
 class LocateRequest(Frozen):
     site: Site
-    snapshot: Snapshot
+    snapshot: LenientSnapshot
+    params: Params = Field(default_factory=dict)  # the task's values: a page showing one is an entity page
 
 
 class LocateResponse(LocateResult):
@@ -43,20 +44,24 @@ class PlanRequest(Frozen):
     state_id: StateId
     goal_text: GoalText
     params: Params = Field(default_factory=dict)
+    # The current page. When it lists elements, a route is returned only if its first step's
+    # control is on it (guards against a page recognised by similarity, or a merged list page).
+    snapshot: LenientSnapshot | None = None
 
 
 class PlanResponse(PlanResult):
-    pass
+    blocked: str | None = None  # the snapshot is a blocked or error page: no route, nothing learned
 
 
 class ReportRequest(ReportEvent):
-    pass
+    to_snapshot: LenientSnapshot
 
 
 class ReportResponse(Frozen):
     state_id: StateId
     known: bool
     duplicate: bool
+    blocked: str | None = None  # a blocked or error page: not learned
 
 
 class ChangesResponse(Frozen):

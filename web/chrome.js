@@ -8,7 +8,7 @@
   const mk = (tag, cls, txt) => { const e = document.createElement(tag); if (cls) e.className = cls; if (txt !== undefined) e.textContent = txt; return e; };
 
   function copyText(text, btn) {
-    const done = () => { const o = btn.dataset.l || btn.textContent; btn.dataset.l = o; btn.textContent = "Copied"; setTimeout(() => { btn.textContent = o; }, 1500); };
+    const done = () => { const o = btn.dataset.l || btn.innerHTML; btn.dataset.l = o; btn.textContent = "Copied"; setTimeout(() => { btn.innerHTML = o; }, 1500); };
     const fail = () => { btn.textContent = "Press Ctrl+C"; };
     if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(done, fail);
     else {

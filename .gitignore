@@ -39,3 +39,5 @@ docs/deploy.md
 deploy/
 docs/hydradb-notes.md
 /.hydradb-token
+docs/SHIP_PLAN.md
+docs/LIVE_TEST_REPORT.md

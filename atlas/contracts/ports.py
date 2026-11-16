@@ -31,6 +31,8 @@ from atlas.contracts.types import (
     Transition,
 )
 
+STATES_BY_URL_LIMIT = 50
+
 
 class GraphStore(Protocol):
     """The map. Every method is scoped to a namespace (`ns`, one per tenant) and every
@@ -42,6 +44,17 @@ class GraphStore(Protocol):
         ...
 
     def get_state(self, ns: str, state_id: int) -> State | None: ...
+
+    def set_state_tokens(self, ns: str, state_id: int, tok: str) -> None:
+        """Store the state's token fingerprint (`atlas.core.signature.fingerprint`, may be "")
+        and mark it as the newest state of its URL template. Idempotent; the state must exist."""
+        ...
+
+    def states_by_url(self, ns: str, site: str, url_tmpl: str) -> tuple[tuple[int, str], ...]:
+        """(state id, fingerprint) of the site's states with this URL template, newest
+        `set_state_tokens` first, at most `STATES_BY_URL_LIMIT`. States never given a
+        fingerprint come last with "". Read only."""
+        ...
 
     def has_event(self, ns: str, event_id: str) -> bool:
         """True when an observation with this `event_id` has been recorded in `ns`."""

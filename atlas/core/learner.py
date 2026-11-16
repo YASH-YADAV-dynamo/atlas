@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from atlas.contracts.ports import Clock, GraphStore
 from atlas.contracts.types import Goal, Observation, ReportEvent, ReportResult, Transition
+from atlas.core.blocked import blocked_reason, unlearned_result
+from atlas.core.goals import alias_goal, same_words_key
 from atlas.core.ids import goal_id, transition_id
 from atlas.core.locate import locate
 from atlas.core.params import goal_key, templatise_action
@@ -17,7 +19,14 @@ def _expected_event_id(event_id: str) -> str:
 
 
 def report(store: GraphStore, clock: Clock, ns: str, event: ReportEvent) -> ReportResult:
-    arrived = locate(store, ns, event.site, event.to_snapshot)
+    # Arrival with the task's values: the page of another subject (`/wiki/{topic}`) is the same
+    # entity state, so a parameterised step reaches its expected state (SHIP_PLAN 4.2, H2).
+    # A blocked or error page is never stored, linked or made a goal target (SHIP_PLAN 4.3 B).
+    blocked = blocked_reason(event.to_snapshot)
+    if blocked is None:
+        arrived = locate(store, ns, event.site, event.to_snapshot, event.params)
+    else:
+        arrived = unlearned_result(store, ns, event.site, event.to_snapshot, event.params, blocked)
     action = templatise_action(event.action, event.params)
     expected_id = _expected_event_id(event.event_id)
     duplicate = store.has_event(ns, event.event_id) or store.has_event(ns, expected_id)
@@ -43,7 +52,10 @@ def report(store: GraphStore, clock: Clock, ns: str, event: ReportEvent) -> Repo
     reached = event.expect_state is None or event.expect_state == arrived.state_id
     recorded: list[Transition] = []
     achieved: Transition | None = None
-    if event.ok and reached:
+    if blocked is not None:
+        if event.expect_state is not None:
+            recorded.append(observe(expected_id, event.expect_state, False))
+    elif event.ok and reached:
         achieved = observe(event.event_id, arrived.state_id, True)
         recorded.append(achieved)
     elif event.expect_state is not None:
@@ -56,6 +68,15 @@ def report(store: GraphStore, clock: Clock, ns: str, event: ReportEvent) -> Repo
         key = goal_key(event.goal_text, event.params)
         goal = Goal(id=goal_id(ns, event.site, key), site=event.site, text=key)
         store.link_goal(ns, goal, achieved.id)
+        # The same-words alias, marked read or act: rewordings of a read goal match it
+        # automatically, act goals are only offered (SHIP_PLAN 5). Learned from successes only.
+        words = same_words_key(key)
+        if words:
+            store.link_goal(ns, alias_goal(ns, event.site, words, event.kind), achieved.id)
     return ReportResult(
-        state_id=arrived.state_id, known=arrived.known, duplicate=duplicate, transitions=tuple(recorded)
+        state_id=arrived.state_id,
+        known=arrived.known,
+        duplicate=duplicate,
+        transitions=tuple(recorded),
+        blocked=blocked,
     )

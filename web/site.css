@@ -156,5 +156,9 @@ section.block h2{max-width:26ch;font-size:clamp(28px,3.8vw,44px);letter-spacing:
 #tr-mean{color:var(--muted);margin:0 0 var(--s2);max-width:60ch}
 #setup .codeblock{max-width:760px}#setup .fine{font-size:13px;color:var(--muted);margin:var(--s2) 0 0}
 
-/* hero: copyable agent prompt (llms.txt) */
-.hero-prompt{max-width:760px;margin:var(--s3) 0 var(--s4)}.hero-prompt header small a{color:inherit}.hero-prompt pre{white-space:pre-wrap;overflow-wrap:anywhere}
+/* hero: llms.txt copy button at the right end of the heading */
+.hero-head{display:flex;align-items:flex-end;justify-content:space-between;gap:var(--s3);margin-bottom:var(--s3)}
+.hero-head h1{margin-bottom:0}
+.llms-btn{display:inline-flex;align-items:center;gap:8px;min-height:40px;padding:0 16px;border-radius:999px;font:600 14px var(--mono,var(--font));margin-bottom:.6em}
+.llms-btn svg{width:15px;height:15px;fill:none;stroke:currentColor;stroke-width:1.5}
+@media (max-width:720px){.hero-head{flex-direction:column;align-items:flex-start;gap:var(--s2)}.llms-btn{margin-bottom:0}}

@@ -67,6 +67,9 @@ def bind_action(action: Json, params: Mapping[str, str]) -> Json:
         out = {key: val for key, val in item.items() if key != "param"}
         if item.get("param") is not None:
             out["value"] = params[item["param"]]
+        elif isinstance(item.get("value"), str) and item.get("kind") != "goto":
+            # a typed value may hold a slot: "{topic} awards"
+            out["value"] = _SLOT.sub(lambda m: params.get(m.group(1), m.group(0)), item["value"])
         return out
 
     def text(t: str) -> str:
@@ -91,6 +94,24 @@ def templatise_action(action: Json, params: Mapping[str, str]) -> Json:
         return pattern.sub(lambda m: "{" + slots[m.group(0)] + "}", t)
 
     return _walk(action, lambda loc: _locator(loc, text), value)
+
+
+def _has_slots(action: Json) -> bool:
+    """True when the action is bound from the task's parameters."""
+    found = False
+
+    def note(item: Json) -> Json:
+        nonlocal found
+        found = found or bool(item.get("param"))
+        return item
+
+    def locator(loc: Json) -> Json:
+        nonlocal found
+        found = found or "{" in str(loc.get("name", "")) or "{" in str(loc.get("row") or "")
+        return loc
+
+    _walk(action, locator, note)
+    return found
 
 
 class Atlas:
@@ -156,12 +177,11 @@ class Navigator:
             reply = atlas.post("/v1/report", last)
             return (reply["state_id"] if ok else state), ok
 
-        state = atlas.post("/v1/locate", {"site": atlas.site, "snapshot": snap})["state_id"]
+        state = atlas.post("/v1/locate", {"site": atlas.site, "snapshot": snap, "params": params})["state_id"]
         replans, success = 0, False
         while counts["steps"] < max_steps and not success:
-            plan = atlas.post(
-                "/v1/plan", {"site": atlas.site, "state_id": state, "goal_text": goal, "params": params}
-            )
+            body = {"site": atlas.site, "state_id": state, "goal_text": goal, "params": params}
+            plan = atlas.post("/v1/plan", {**body, "snapshot": snap})
             if plan["route"] and replans < MAX_REPLANS:
                 for index, route_step in enumerate(plan["route"]):
                     if counts["steps"] >= max_steps:
@@ -169,10 +189,16 @@ class Navigator:
                     expect = route_step["expect_state"]
                     state, ok = step(state, route_step["action"], expect)
                     counts["map"] += 1
+                    final = index == len(plan["route"]) - 1
+                    if ok and final and state != expect and _has_slots(route_step["action"]):
+                        # A parameterised last step lands on a page for this task's values (another
+                        # article, another order): that is the goal, not a wrong turn.
+                        success = True
+                        break
                     if not ok or state != expect:
                         replans += 1
                         break
-                    success = index == len(plan["route"]) - 1
+                    success = final
                 continue
             if fallback is None:
                 break

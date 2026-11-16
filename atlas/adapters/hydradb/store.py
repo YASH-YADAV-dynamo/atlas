@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Mapping
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 
 import neo4j
@@ -18,6 +18,7 @@ from atlas.adapters.hydradb import queries as q
 from atlas.adapters.hydradb.paths import RawPath, parse_path_rows, plain_path_rows
 from atlas.adapters.hydradb.retry import call_with_retry
 from atlas.contracts.errors import PathFormatError, StoreUnavailableError
+from atlas.contracts.ports import STATES_BY_URL_LIMIT
 from atlas.contracts.types import (
     Action,
     ChangeEvent,
@@ -147,6 +148,15 @@ class HydraGraphStore:
         }
         self._run(q.UPSERT_STATES, rows=[row])
         return known
+
+    def set_state_tokens(self, ns: str, state_id: int, tok: str) -> None:
+        at = datetime.now(UTC).isoformat()
+        self._run(q.SET_STATE_TOKENS, id=state_id, tok=tok, at=at)
+
+    def states_by_url(self, ns: str, site: str, url_tmpl: str) -> tuple[tuple[int, str], ...]:
+        rows = [r.data() for r in self._run(q.STATES_BY_URL, ns=ns, site=site, url_tmpl=url_tmpl)]
+        rows.sort(key=lambda row: (row["at"] or "", -int(row["id"])), reverse=True)
+        return tuple((int(row["id"]), row["tok"] or "") for row in rows[:STATES_BY_URL_LIMIT])
 
     # -- evidence -------------------------------------------------------------------------
 

@@ -18,7 +18,7 @@ from __future__ import annotations
 import re
 import time
 import uuid
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Literal, cast
 
@@ -26,7 +26,12 @@ from pydantic import ValidationError
 
 from atlas.contracts import mcp_models as m
 from atlas.contracts.api_models import PlanRequest
-from atlas.contracts.errors import BrowserActionError, MissingParamError, ToolUnavailableError
+from atlas.contracts.errors import (
+    BrowserActionError,
+    MissingParamError,
+    ToolUnavailableError,
+    UnknownStateError,
+)
 from atlas.contracts.ports import BrowserDriver, Clock, MapStore, SiteStore
 from atlas.contracts.types import (
     MAX_ROUTE_STEPS,
@@ -43,17 +48,19 @@ from atlas.contracts.types import (
     Snapshot,
     Transition,
 )
+from atlas.core.blocked import blocked_reason, unlearned_result
 from atlas.core.cost import reliability
-from atlas.core.ids import entity_id, goal_id
+from atlas.core.goals import content_words, skill_match, visible_goals
+from atlas.core.goals import resolve as resolve_goal
+from atlas.core.ids import entity_id
 from atlas.core.learner import report as learn
-from atlas.core.locate import locate
-from atlas.core.params import bind_action, goal_key, required_slots, templatise_action
+from atlas.core.locate import locate, resolve
+from atlas.core.params import bind_action, required_slots, templatise_action
 from atlas.core.planner import plan as plan_route
-from atlas.core.signature import state_from_snapshot
+from atlas.core.planner import plan_for
 from atlas.mcp.budget import enforce_budget
 from atlas.mcp.pending import hold_or_fold
 
-_WORD = re.compile(r"[a-z0-9]+")
 _SLOT = re.compile(r"\{([a-z][a-z0-9_]*)\}")
 _SPACES = re.compile(r"\s+")
 _FILL_KINDS: dict[str, Literal[ActionKind.FILL, ActionKind.SELECT, ActionKind.CHECK]] = {
@@ -171,16 +178,19 @@ class AtlasTools:
     # ---- atlas_find_skills --------------------------------------------------------------
 
     def find_skills(self, request: m.FindSkillsInput) -> m.FindSkillsOutput:
-        wanted = set(_WORD.findall(request.goal_text.lower()))
         here = (
             locate(self._store, self._ns, request.site, self._driver.snapshot()).state_id
             if self._driver
             else None
         )
         ranked: list[tuple[int, int, int, m.SkillInfo]] = []
-        for goal in self._store.list_goals(self._ns, request.site):
-            words = set(_WORD.findall(_SLOT.sub(" ", goal.text.lower())))
-            overlap = len(wanted & words)
+        # Content words only (stopwords and retrieval verbs out), at least half of the query's
+        # shared, so "give a customer their money back" offers nothing unrelated (SHIP_PLAN A5).
+        for goal in visible_goals(self._store.list_goals(self._ns, request.site)):
+            overlap = skill_match(request.goal_text, goal.text)
+            if overlap == 0:
+                continue
+            words = content_words(goal.text)
             transitions = self._goal_transitions(goal)
             if overlap == 0 or not transitions:
                 continue
@@ -240,7 +250,11 @@ class AtlasTools:
         if kind != "goal":
             return None
         return next(
-            (g for g in self._store.list_goals(self._ns, self._site) if str(g.id) == number),
+            (
+                g
+                for g in visible_goals(self._store.list_goals(self._ns, self._site))
+                if str(g.id) == number
+            ),
             None,
         )
 
@@ -315,12 +329,16 @@ class AtlasTools:
         the map ends (frontier), the goal route completes, or a step fails."""
         failed_steps: set[tuple[int, str]] = set()  # transitions that failed in this call
         while True:
-            state_id = locate(self._store, self._ns, self._site, snapshot).state_id
+            state_id = self._locate(self._site, snapshot, session.params)
             planned = plan_route(
                 self._store,
                 self._ns,
                 PlanRequest(
-                    site=self._site, state_id=state_id, goal_text=session.goal_text, params=session.params
+                    site=self._site,
+                    state_id=state_id,
+                    goal_text=session.goal_text,
+                    params=session.params,
+                    snapshot=snapshot,
                 ),
             )
             if planned.needs_model:
@@ -527,13 +545,24 @@ class AtlasTools:
     # ---- planner mode: atlas_plan / atlas_report ----------------------------------------
 
     def plan(self, request: m.PlanToolInput) -> m.PlanToolOutput:
+        blocked = blocked_reason(request.snapshot_summary)
+        if blocked is not None:  # not a page to route from or to learn: ask the model
+            here = unlearned_result(
+                self._store, self._ns, request.site, request.snapshot_summary, request.params, blocked
+            )
+            return m.PlanToolOutput(
+                state_id=here.state_id,
+                needs_model=True,
+                reason=PlanReason.NO_ROUTE_WITHIN_MAX_STEPS,
+                blocked=blocked,
+            )
         is_new = False
         if self._new_state_gate is not None and not self._read_only:
-            probe = state_from_snapshot(self._ns, request.site, request.snapshot_summary).id
-            is_new = self._store.get_state(self._ns, probe) is None
+            seen = resolve(self._store, self._ns, request.site, request.snapshot_summary, request.params)
+            is_new = not seen.known
             if is_new:
                 self._new_state_gate()
-        state_id = self._locate(request.site, request.snapshot_summary)
+        state_id = self._locate(request.site, request.snapshot_summary, request.params)
         if is_new and self._on_new_state is not None:
             self._on_new_state()
         if self._read_only and self._store.get_state(self._ns, state_id) is None:
@@ -542,16 +571,24 @@ class AtlasTools:
             return m.PlanToolOutput(
                 state_id=state_id, needs_model=True, reason=PlanReason.NO_ROUTE_WITHIN_MAX_STEPS
             )
-        planned = plan_route(
+        if self._store.get_state(self._ns, state_id) is None:
+            raise UnknownStateError(f"unknown state: {state_id}")
+        found = resolve_goal(self._store, self._ns, request.site, request.goal_text, request.params)
+        planned = plan_for(
             self._store,
             self._ns,
             PlanRequest(
-                site=request.site, state_id=state_id, goal_text=request.goal_text, params=request.params
+                site=request.site,
+                state_id=state_id,
+                goal_text=request.goal_text,
+                params=request.params,
+                snapshot=request.snapshot_summary,
             ),
+            found,
         )
         route = list(planned.route)
         needs_model, reason = planned.needs_model, planned.reason
-        if route and self._final_step_varies(request, route):
+        if route and self._final_step_varies(found.targets, route):
             # The goal was reached by different literal clicks from this page on earlier runs
             # (e.g. "the first book" of each category): replaying one of them would be wrong.
             route.pop()
@@ -567,15 +604,16 @@ class AtlasTools:
                 needs_model=needs_model,
                 reason=reason,
                 truncated=len(steps) > m.MAX_BRIEF_STEPS,
+                match=planned.match,
+                goal=planned.goal,
+                params=planned.params,
             )
         )
 
-    def _final_step_varies(self, request: m.PlanToolInput, route: list[RouteStep]) -> bool:
+    def _final_step_varies(self, targets: tuple[int, ...], route: list[RouteStep]) -> bool:
         """True when the last step is a literal pick that differed between successful runs."""
         if required_slots(route[-1].action):
             return False  # bound from the task's parameters, so it already varies correctly
-        gid = goal_id(self._ns, request.site, goal_key(request.goal_text, request.params))
-        targets = self._store.goal_targets(self._ns, gid)
         actions = {
             t.action.model_dump_json()
             for t in (self._store.get_transition(self._ns, tid) for tid in targets)
@@ -600,8 +638,9 @@ class AtlasTools:
             params=request.params,
             goal_reached=request.goal_reached,
             run_id=request.run_id,
+            kind=request.kind,
         )
-        folded = hold_or_fold(self._ns, event)
+        folded = event if blocked_reason(event.to_snapshot) else hold_or_fold(self._ns, event)
         if folded is None:
             # A same-page form fill: held and folded into the action that submits it, so a
             # replayed route fills the field first (a self-loop would never be planned).
@@ -609,7 +648,7 @@ class AtlasTools:
             known = self._store.get_state(self._ns, here) is not None
             return m.ReportToolOutput(state_id=here, known=known, duplicate=False, event_id=event_id)
         result = learn(self._store, self._clock, self._ns, folded)
-        if request.ok and result.transitions and not result.duplicate:
+        if request.ok and result.transitions and not result.duplicate and result.blocked is None:
             self._record_entities(
                 _Session(goal_text=request.goal_text or "", params=dict(request.params)),
                 folded.action,
@@ -617,15 +656,22 @@ class AtlasTools:
                 [],
             )
         return m.ReportToolOutput(
-            state_id=result.state_id, known=result.known, duplicate=result.duplicate, event_id=event_id
+            state_id=result.state_id,
+            known=result.known,
+            duplicate=result.duplicate,
+            event_id=event_id,
+            blocked=result.blocked,
         )
 
     # ---- helpers ------------------------------------------------------------------------
 
-    def _locate(self, site: str, snapshot: Snapshot) -> int:
+    def _locate(self, site: str, snapshot: Snapshot, params: Mapping[str, str] | None = None) -> int:
+        blocked = blocked_reason(snapshot)
+        if blocked is not None:
+            return unlearned_result(self._store, self._ns, site, snapshot, params, blocked).state_id
         if self._read_only:
-            return state_from_snapshot(self._ns, site, snapshot).id
-        return locate(self._store, self._ns, site, snapshot).state_id
+            return resolve(self._store, self._ns, site, snapshot, params).state_id
+        return locate(self._store, self._ns, site, snapshot, params).state_id
 
     def _check_site(self, site: str) -> None:
         """A read-only key cannot map a new site, so naming an unmapped one is an error that says
