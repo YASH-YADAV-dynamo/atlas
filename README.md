@@ -174,9 +174,7 @@ failures: [eval/live/RESULTS.md](eval/live/RESULTS.md).
   link does not always carry over to a person whose link is worded differently (4.5 turns against 2). We are
   fixing this, and these rows are published as they are.
 
-Two live sandboxes, one synthetic, one real, and both are measured. The smoke benchmark below uses the synthetic one.
-
-The first benchmark run is `smoke-deepseek-20261115`: a smoke benchmark, one seed, DeepSeek model
+The synthetic-site benchmark so far is `smoke-deepseek-20261115`: a smoke benchmark, one seed, DeepSeek model
 (`deepseek-flash`), 240 task records, $0.98 spent, not partial. Every number below is copied from
 `results/smoke-deepseek-20261115/`.
 
