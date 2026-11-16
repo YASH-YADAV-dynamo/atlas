@@ -31,6 +31,7 @@ _CACHED_READS = frozenset(
         "list_goals",
         "get_transition",
         "get_entity",
+        "get_memo",
         "get_map",
         "list_sites",
         "list_skills",

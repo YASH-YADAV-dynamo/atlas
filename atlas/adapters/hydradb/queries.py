@@ -150,6 +150,18 @@ GET_ENTITY = (
     "e.last_seen AS last_seen, e.seen_at AS seen_at"
 )
 
+# Answer memos (SHIP_PLAN 6): addresses only. The UNWIND form (rows as a parameter) with a label
+# is the one upsert the engine runs; there is no MERGE ... SET in one statement (hydradb-notes a).
+PUT_MEMO = (
+    "UNWIND $rows AS row MERGE (n {id: row.id}) "
+    "SET n:Memo, n.ns = row.ns, n.site = row.site, n.key = row.key, n.url = row.url, "
+    "n.title = row.title, n.at = row.at"
+)
+GET_MEMO = (
+    "MATCH (n:Memo {id: $id}) WHERE n.ns = $ns "
+    "RETURN n.id AS id, n.site AS site, n.key AS key, n.url AS url, n.title AS title, n.at AS at"
+)
+
 MAP_STATES = (
     "MATCH (n:State) WHERE n.ns = $ns AND n.site = $site "
     "RETURN n.id AS id, n.site AS site, n.sig AS sig, n.url_tmpl AS url_tmpl, n.title AS title ORDER BY n.id"

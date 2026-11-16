@@ -23,6 +23,7 @@ from atlas.contracts.types import (
     Action,
     ChangeEvent,
     Entity,
+    Memo,
     Goal,
     MapView,
     Observation,
@@ -284,6 +285,33 @@ class HydraGraphStore:
             key=row["key"],
             transition_id=row["last_seen"],
             seen_at=datetime.fromisoformat(row["seen_at"]),
+        )
+
+    # -- answer memos ---------------------------------------------------------------------
+
+    def put_memo(self, ns: str, memo: Memo) -> None:
+        row = {
+            "id": memo.id,
+            "ns": ns,
+            "site": memo.site,
+            "key": memo.key,
+            "url": memo.url,
+            "title": memo.title,
+            "at": memo.at.isoformat(),
+        }
+        self._run(q.PUT_MEMO, rows=[row])
+
+    def get_memo(self, ns: str, memo_id: int) -> Memo | None:
+        row = self._one(q.GET_MEMO, id=memo_id, ns=ns)
+        if row is None:
+            return None
+        return Memo(
+            id=row["id"],
+            site=row["site"],
+            key=row["key"],
+            url=row["url"],
+            title=row["title"] or "",
+            at=datetime.fromisoformat(row["at"]),
         )
 
     # -- planning -------------------------------------------------------------------------

@@ -15,6 +15,7 @@ from atlas.contracts.types import (
     Entity,
     Goal,
     MapView,
+    Memo,
     Observation,
     RunStep,
     Skill,
@@ -48,6 +49,7 @@ class _Namespace:
     goals: dict[int, list[int]] = field(default_factory=lambda: defaultdict(list))
     goal_nodes: dict[int, Goal] = field(default_factory=dict)
     entities: dict[int, Entity] = field(default_factory=dict)
+    memos: dict[int, Memo] = field(default_factory=dict)
     changes: dict[int, ChangeEvent] = field(default_factory=dict)
     skills: dict[int, Skill] = field(default_factory=dict)
     log: dict[int, SleepLogEntry] = field(default_factory=dict)
@@ -182,6 +184,14 @@ class InMemoryGraphStore:
     def get_entity(self, ns: str, entity_id: int) -> Entity | None:
         with self._lock:
             return self._spaces[ns].entities.get(entity_id)
+
+    def put_memo(self, ns: str, memo: Memo) -> None:
+        with self._lock:
+            self._spaces[ns].memos[memo.id] = memo
+
+    def get_memo(self, ns: str, memo_id: int) -> Memo | None:
+        with self._lock:
+            return self._spaces[ns].memos.get(memo_id)
 
     def get_map(self, ns: str, site: str) -> MapView:
         with self._lock:

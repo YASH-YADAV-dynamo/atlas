@@ -53,3 +53,8 @@ def skill_id(ns: str, via: tuple[int, ...]) -> int:
 def sleep_log_id(ns: str, skill_id: int, seq: int) -> int:
     """The `seq`-th sleep-log entry about a skill (0 for its first creation)."""
     return stable_id(ns, "log", skill_id, seq)
+
+
+def memo_id(ns: str, site: str, key: str) -> int:
+    """One memo per (site, key): writing it again replaces the address."""
+    return stable_id(ns, "memo", site, key)

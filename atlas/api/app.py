@@ -18,6 +18,7 @@ from starlette.routing import Route
 
 from atlas.contracts.api_models import (
     CHANGES_PATH,
+    FINISH_PATH,
     HEALTH_PATH,
     LOCATE_PATH,
     MAP_PATH,
@@ -25,8 +26,11 @@ from atlas.contracts.api_models import (
     REPORT_PATH,
     SKILLS_PATH,
     SLEEP_PATH,
+    START_PATH,
     ChangesResponse,
     ErrorBody,
+    FinishRequest,
+    FinishResponse,
     LocateRequest,
     LocateResponse,
     PlanRequest,
@@ -34,12 +38,14 @@ from atlas.contracts.api_models import (
     ReportRequest,
     ReportResponse,
     SkillsResponse,
+    StartRequest,
+    StartResponse,
 )
 from atlas.contracts.errors import AtlasError, UnauthorizedError, http_status_for
 from atlas.contracts.mcp_models import Mode, tools_for
-from atlas.contracts.ports import Clock, GraphStore, MapStore, RouteStore
-from atlas.contracts.types import MapView, PlanReason, Site, SleepReport
-from atlas.core import changes, learner, planner, sleep
+from atlas.contracts.ports import Clock, GraphStore, MapStore, RouteStore, SessionStore
+from atlas.contracts.types import MapView, PlanReason, ReportResult, Site, SleepReport
+from atlas.core import changes, learner, planner, session, sleep
 from atlas.core import locate as locating
 from atlas.core.blocked import blocked_reason, unlearned_result
 from atlas.log import log_event
@@ -90,6 +96,7 @@ def create_app(
 ) -> FastAPI:
     # Both stores implement ChangeStore; the MapStore port the factory returns does not name it yet.
     routes = cast(RouteStore, store)
+    sessions = cast(SessionStore, store)
     skills = cast(sleep.SleepStore, store)
     registry = keys if keys is not None else KeyRegistry(settings)
     locating.configure(min_jaccard=settings.locate_min_jaccard)
@@ -195,6 +202,33 @@ def create_app(
         return ReportResponse(
             state_id=result.state_id, known=result.known, duplicate=result.duplicate, blocked=result.blocked
         )
+
+    @v1.post(START_PATH, response_model_exclude_none=True)
+    def post_start(request: StartRequest, caller: Caller) -> StartResponse:
+        return session.start(
+            sessions,
+            caller.namespace,
+            request,
+            read_only=caller.read_only,
+            max_steps=settings.plan_max_steps,
+            max_steps_cap=settings.plan_max_steps_cap,
+            path_count=settings.plan_path_count,
+        )
+
+    @v1.post(FINISH_PATH, response_model_exclude_none=True)
+    def post_finish(request: FinishRequest, caller: Caller) -> FinishResponse:
+        caller.require_write("finish")
+        registry.check_event_quota(caller)
+        ns = caller.namespace
+
+        def noted(result: ReportResult) -> None:
+            if not result.duplicate:
+                registry.note_event(caller)
+            change = changes.note_report(routes, clock, ns, result)
+            if change is not None:
+                log_event("flow_change", transition_id=change.transition_id)
+
+        return session.finish(sessions, clock, ns, request, noted)
 
     @v1.get(MAP_PATH)
     def get_map(site: Site, caller: Caller) -> MapView:

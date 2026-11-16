@@ -22,6 +22,12 @@ class UnknownStateError(AtlasError):
     code = "unknown_state"
 
 
+class UnknownPlanError(AtlasError):
+    """`/v1/finish` named an expired or never issued plan and gave nothing else to go on."""
+
+    code = "unknown_plan"
+
+
 class MissingParamError(AtlasError):
     """An action needs a `{slot}` the caller did not supply."""
 
@@ -82,6 +88,7 @@ HTTP_STATUS: Mapping[type[AtlasError], int] = MappingProxyType(
     {
         UnauthorizedError: 401,
         UnknownStateError: 404,
+        UnknownPlanError: 404,
         MissingParamError: 422,
         UnsafeQueryValueError: 400,
         PathFormatError: 502,

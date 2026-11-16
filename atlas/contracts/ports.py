@@ -19,6 +19,7 @@ from atlas.contracts.types import (
     Entity,
     Goal,
     MapView,
+    Memo,
     ModelDecision,
     Observation,
     Params,
@@ -108,6 +109,16 @@ class ContextStore(Protocol):
     def get_entity(self, ns: str, entity_id: int) -> Entity | None: ...
 
 
+class MemoStore(Protocol):
+    """Remembered page addresses (SHIP_PLAN 6): answer pages, their URL template, search entries."""
+
+    def put_memo(self, ns: str, memo: Memo) -> None:
+        """Create or replace the memo with `memo.id`. Idempotent."""
+        ...
+
+    def get_memo(self, ns: str, memo_id: int) -> Memo | None: ...
+
+
 class SiteStore(Protocol):
     """Map sizes, for the MCP resource `atlas://sites` (increment 6)."""
 
@@ -163,7 +174,11 @@ class RouteStore(GraphStore, ChangeStore, Protocol):
     """What the Route API needs once change detection is on."""
 
 
-class MapStore(GraphStore, ContextStore, ChangeStore, Protocol):
+class SessionStore(RouteStore, MemoStore, Protocol):
+    """What `/v1/start` and `/v1/finish` need: the route store plus the answer memo."""
+
+
+class MapStore(GraphStore, ContextStore, ChangeStore, MemoStore, Protocol):
     """The full store. The in-memory fake and the HydraDB adapter implement every part."""
 
 

@@ -203,6 +203,19 @@ class Entity(Frozen):
     seen_at: datetime
 
 
+class Memo(Frozen):
+    """A remembered page address (SHIP_PLAN 6), never page content: the answer page of a read
+    goal for one set of parameters, the URL template of that goal's answer pages, or the site's
+    search entry. `key` says which (see `atlas.core.memo`); `id` is `atlas.core.ids.memo_id`."""
+
+    id: Annotated[int, Field(ge=1, le=MAX_ID)]
+    site: Site
+    key: Annotated[str, Field(min_length=1, max_length=120)]
+    url: Annotated[str, Field(min_length=1, max_length=2048)]
+    title: ShortText = ""
+    at: datetime
+
+
 class ChangeEvent(Frozen):
     """A detected flow change (SPEC 5.5): a transition with a strong record stopped working.
 
