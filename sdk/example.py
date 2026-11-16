@@ -1,50 +1,18 @@
 """Run one TestMart task through Atlas. Needs the Atlas API, TestMart (python -m testmart) and
-`pip install atlas-sdk playwright`. Environment: ATLAS_URL, ATLAS_API_KEY (optional), TESTMART_URL,
+`pip install "atlas-route-sdk[playwright]"`. Environment: ATLAS_URL, ATLAS_API_KEY (optional), TESTMART_URL,
 TESTMART_PASSWORD, ORDER_ID (an order number that is not refunded yet)."""
 
 from __future__ import annotations
 
 import json
 import os
-import re
 
 from atlas_sdk import Atlas
-from playwright.sync_api import Locator, Page, sync_playwright
+from atlas_sdk.drivers.playwright import PlaywrightDriver
+from playwright.sync_api import sync_playwright
 
 TESTMART = os.environ.get("TESTMART_URL", "http://127.0.0.1:8100")
 SITE = "testmart.test"
-ELEMENT = re.compile(r'- (link|button|textbox|searchbox|checkbox|combobox) "((?:[^"\\]|\\.)*)"')
-
-
-class PlaywrightDriver:
-    """A Playwright page that speaks the SDK's plain dicts: role/name snapshots, acts by role and name."""
-
-    def __init__(self, page: Page) -> None:
-        self.page = page
-
-    def snapshot(self) -> dict:
-        tree = self.page.locator("body").aria_snapshot()
-        elements = [{"role": role, "name": json.loads(f'"{name}"')} for role, name in ELEMENT.findall(tree)]
-        return {"url": self.page.url, "title": self.page.title(), "elements": elements}
-
-    def act(self, action: dict) -> None:
-        for fill in action.get("fills", ()):
-            self._find(fill["locator"]).fill(fill["value"])
-        if action["kind"] == "goto":
-            self.page.goto(TESTMART + action["value"])
-            return
-        target = self._find(action["locator"])
-        if action["kind"] == "fill":
-            target.fill(action["value"])
-        else:
-            target.click()
-        self.page.wait_for_load_state("load")
-
-    def _find(self, locator: dict) -> Locator:
-        scope: Page | Locator = self.page
-        if locator.get("row"):
-            scope = self.page.locator("tr, li").filter(has_text=locator["row"])
-        return scope.get_by_role(locator["role"], name=locator["name"], exact=True)
 
 
 def fallback(snapshot: dict, goal: str, params: dict) -> dict | None:

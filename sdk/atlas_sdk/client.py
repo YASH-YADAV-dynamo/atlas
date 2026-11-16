@@ -1,35 +1,34 @@
-"""Route API client and the step loop: locate, plan, drive known roads, ask the caller's own
-agent (`fallback`) only where the map ends, and report every step."""
+"""Route API client and the step loop. One `/v1/start` (locate, match, plan), the known road or the
+answer page driven from the response, the caller's own agent (`fallback`) only where the map ends,
+and one `/v1/finish` that reports the whole run."""
 
 from __future__ import annotations
 
+import itertools
 import re
 import time
 import uuid
 from collections.abc import Callable, Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Protocol
 
 import httpx
 
-type Json = dict[str, Any]
-type Fallback = Callable[[Json, str, Json], Json | None]
+Json = dict[str, Any]
 
 _SLOT = re.compile(r"\{([a-z][a-z0-9_]*)\}")
 MAX_REPLANS = 2
+MAX_FINISH_STEPS = 12
+FILLS = ("fill", "select", "check")
 
 
 class Driver(Protocol):
-    """The caller's browser, speaking plain dicts."""
-
     def snapshot(self) -> Json: ...
 
     def act(self, action: Json) -> None: ...
 
 
 class AtlasApiError(Exception):
-    """A non-200 answer from the Route API."""
-
     def __init__(self, status: int, code: str, message: str) -> None:
         super().__init__(f"{status} {code}: {message}")
         self.status, self.code, self.message = status, code, message
@@ -41,27 +40,28 @@ class RunSummary:
     steps: int
     map_steps: int
     fallback_calls: int
+    via: str = field(default="explore", compare=False)  # "url" | "route" | "explore"
+    reason: str | None = field(default=None, compare=False)  # why the first plan was or was not served
+    state_id: int | None = field(default=None, compare=False)  # the start state
 
 
-def _locator(loc: Json, convert: Callable[[str], str]) -> Json:
-    out = {**loc, "name": convert(loc.get("name", ""))}
-    if loc.get("row") is not None:
-        out["row"] = convert(loc["row"])
-    return out
+# Apply `text` to every locator name and row, and `value_fn` to the action and each fill.
+def _walk(action: Json, text: Callable[[str], str], value_fn: Callable[[Json], Json]) -> Json:
 
+    def locator(loc: Json) -> Json:
+        out = {**loc, "name": text(loc.get("name", ""))}
+        return {**out, "row": text(loc["row"])} if loc.get("row") is not None else out
 
-def _walk(action: Json, locator_fn: Callable[[Json], Json], value_fn: Callable[[Json], Json]) -> Json:
-    """Apply `locator_fn` to every locator and `value_fn` to the action and each fill."""
     out = value_fn(action)
     if out.get("locator") is not None:
-        out["locator"] = locator_fn(out["locator"])
+        out["locator"] = locator(out["locator"])
     if action.get("fills"):
-        out["fills"] = [{**value_fn(f), "locator": locator_fn(f["locator"])} for f in action["fills"]]
+        out["fills"] = [{**value_fn(f), "locator": locator(f["locator"])} for f in action["fills"]]
     return out
 
 
+# Fill `{slot}` placeholders and `param` fields with the caller's values.
 def bind_action(action: Json, params: Mapping[str, str]) -> Json:
-    """Fill `{slot}` placeholders and `param` fields with the caller's values."""
 
     def value(item: Json) -> Json:
         out = {key: val for key, val in item.items() if key != "param"}
@@ -75,11 +75,11 @@ def bind_action(action: Json, params: Mapping[str, str]) -> Json:
     def text(t: str) -> str:
         return _SLOT.sub(lambda m: params[m.group(1)], t)
 
-    return _walk(action, lambda loc: _locator(loc, text), value)
+    return _walk(action, text, value)
 
 
+# Turn parameter values back into slots, so the map learns the road and not the order.
 def templatise_action(action: Json, params: Mapping[str, str]) -> Json:
-    """Turn parameter values back into slots, so the map learns the road and not the order."""
     slots = {val: slot for slot, val in sorted(params.items(), reverse=True) if val}
     words = sorted(slots, key=len, reverse=True)
     pattern = re.compile("|".join(rf"(?<!\w){re.escape(w)}(?!\w)" for w in words) or "(?!)")
@@ -93,25 +93,22 @@ def templatise_action(action: Json, params: Mapping[str, str]) -> Json:
     def text(t: str) -> str:
         return pattern.sub(lambda m: "{" + slots[m.group(0)] + "}", t)
 
-    return _walk(action, lambda loc: _locator(loc, text), value)
+    return _walk(action, text, value)
 
 
-def _has_slots(action: Json) -> bool:
-    """True when the action is bound from the task's parameters."""
-    found = False
+# The action as a standalone form fill (fill, select or check on one control), else None.
+def as_fill(action: Json) -> Json | None:
+    if action["kind"] not in FILLS or not action.get("locator") or action.get("fills"):
+        return None
+    fill = {key: action[key] for key in ("locator", "kind", "param", "value") if action.get(key) is not None}
+    return fill if "param" in fill or "value" in fill else {**fill, "value": "true"}  # a bare check
 
-    def note(item: Json) -> Json:
-        nonlocal found
-        found = found or bool(item.get("param"))
-        return item
 
-    def locator(loc: Json) -> Json:
-        nonlocal found
-        found = found or "{" in str(loc.get("name", "")) or "{" in str(loc.get("row") or "")
-        return loc
-
-    _walk(action, locator, note)
-    return found
+# Put the held same-page fills first; a fill the action carries (or is) wins per control.
+def fold_fills(action: Json, held: list[Json]) -> Json:
+    own = [f["locator"] for f in action.get("fills", ())] + [action.get("locator")]
+    mine = [f for f in held if f["locator"] not in own]
+    return {**action, "fills": [*mine, *action.get("fills", ())][-20:]} if mine else action
 
 
 class Atlas:
@@ -146,68 +143,80 @@ class Navigator:
         goal: str,
         params: Mapping[str, str] | None = None,
         *,
-        fallback: Fallback | None = None,
+        fallback: Callable[[Json, str, Json], Json | None] | None = None,
         max_steps: int = 25,
+        kind: str = "act",
     ) -> RunSummary:
+        """Follow the known road (or open the remembered answer page) with no model call; ask
+        `fallback` one action at a time where the map ends. `kind="read"` marks a lookup."""
         atlas, driver, params = self._atlas, self._driver, dict(params or {})
-        task = uuid.uuid4().hex[:12]
-        counts = {"steps": 0, "map": 0, "fallback": 0}
-        last: Json | None = None
+        task, ids = uuid.uuid4().hex[:12], itertools.count()
+        count = {"steps": 0, "map": 0, "fallback": 0}
         snap = driver.snapshot()
 
-        def step(state: int, action: Json, expect: int | None) -> tuple[int, bool]:
-            nonlocal snap, last
-            t0 = time.monotonic()
+        def call(path: str, **body: object) -> Json:
+            return atlas.post(path, {"site": atlas.site, "goal_text": goal, "params": params, **body})
+
+        def finish(**body: object) -> Json:
+            return call("/v1/finish", kind=kind, event_id=f"{task}-{next(ids)}", to_snapshot=snap, **body)
+
+        def act(action: Json) -> tuple[bool, int]:
+            nonlocal snap
+            t0, ok, count["steps"] = time.monotonic(), True, count["steps"] + 1
             try:
                 driver.act(bind_action(action, params))
-                ok = True
+                snap = driver.snapshot()
             except Exception:  # any driver failure is reported as a failed step
                 ok = False
-            ms = min(int((time.monotonic() - t0) * 1000), 600_000)
-            if ok:
-                snap = driver.snapshot()
-            last = {
-                "site": atlas.site, "from_state": state, "action": action, "to_snapshot": snap,
-                "ok": ok, "ms": ms, "event_id": f"{task}-s{counts['steps']}",
-                "goal_text": goal, "params": params,
-            }  # fmt: skip
-            if ok and expect is not None:
-                last["expect_state"] = expect
-            counts["steps"] += 1
-            reply = atlas.post("/v1/report", last)
-            return (reply["state_id"] if ok else state), ok
+            return ok, min(int((time.monotonic() - t0) * 1000), 600_000)
 
-        state = atlas.post("/v1/locate", {"site": atlas.site, "snapshot": snap, "params": params})["state_id"]
-        replans, success = 0, False
-        while counts["steps"] < max_steps and not success:
-            body = {"site": atlas.site, "state_id": state, "goal_text": goal, "params": params}
-            plan = atlas.post("/v1/plan", {**body, "snapshot": snap})
-            if plan["route"] and replans < MAX_REPLANS:
-                for index, route_step in enumerate(plan["route"]):
-                    if counts["steps"] >= max_steps:
+        plan = first = call("/v1/start", snapshot=snap)
+        via, success, replans, explored = "explore", False, 0, 0
+        log: list[Json] = []  # explored steps not yet reported
+        held: list[Json] = []  # same-page fills, folded into the action that follows
+        state = None  # the explored steps start from the last flushed batch, else the plan's state
+        while count["steps"] < max_steps and not success:
+            url = plan.get("open_url")  # a remembered answer page: navigate straight there
+            road = [{"action": {"kind": "goto", "value": url}}] if url else plan["route"]
+            if road and replans < MAX_REPLANS:
+                done, total_ms = 0, 0
+                for road_step in road[: max_steps - count["steps"]]:
+                    ok, ms = act(road_step["action"])
+                    count["map"], total_ms = count["map"] + (not url), min(total_ms + ms, 600_000)
+                    if not ok:
                         break
-                    expect = route_step["expect_state"]
-                    state, ok = step(state, route_step["action"], expect)
-                    counts["map"] += 1
-                    final = index == len(plan["route"]) - 1
-                    if ok and final and state != expect and _has_slots(route_step["action"]):
-                        # A parameterised last step lands on a page for this task's values (another
-                        # article, another order): that is the goal, not a wrong turn.
-                        success = True
-                        break
-                    if not ok or state != expect:
-                        replans += 1
-                        break
-                    success = final
-                continue
-            if fallback is None:
+                    done += 1
+                success = done == len(road)
+                finish(
+                    plan_id=plan["plan_id"],
+                    done=0 if url else done,
+                    ok=success,
+                    goal_reached=success,
+                    ms=total_ms,
+                )
+                via = ("url" if url else "route") if success else via
+                if not success:
+                    replans, plan = replans + 1, call("/v1/start", snapshot=snap)  # the frontier
+            elif fallback is None:
                 break
-            counts["fallback"] += 1
-            action = fallback(snap, goal, params)
-            if action is None:
-                success = last is not None
-                break
-            state, _ = step(state, templatise_action(action, params), None)
-        if success and last is not None:
-            atlas.post("/v1/report", {**last, "goal_reached": True})
-        return RunSummary(success, counts["steps"], counts["map"], counts["fallback"])
+            else:
+                count["fallback"] += 1
+                action = fallback(snap, goal, params)
+                if action is None:
+                    success = explored > 0
+                    break
+                template, before = templatise_action(action, params), snap["url"]
+                ok, ms = act(template)
+                fill = as_fill(template)
+                if ok and fill is not None and snap["url"] == before:
+                    held = [f for f in held if f["locator"] != fill["locator"]] + [fill]
+                    continue
+                log.append({"action": fold_fills(template, held), "to": snap, "ok": ok, "ms": ms})
+                held, explored = [], explored + 1
+                if len(log) == MAX_FINISH_STEPS:  # one batch is at most 12 steps: flush, carry on
+                    state = finish(from_state=state or plan["state_id"], steps=log, ok=True)["state_id"]
+                    log = []
+        if log:
+            finish(from_state=state or plan["state_id"], steps=log, ok=success, goal_reached=success)
+        done = (count["steps"], count["map"], count["fallback"])
+        return RunSummary(success, *done, via, first.get("reason"), first["state_id"])
