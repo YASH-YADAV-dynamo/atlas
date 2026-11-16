@@ -159,7 +159,7 @@ The whole file is validated before anything is imported. Schema and `TraceRecord
 ### Live run on real sites (2026-11-16)
 
 Real headless Chromium on Wikipedia against the deployed Atlas, with a plain agent as the baseline on the
-same model (DeepSeek `deepseek-flash`). Success is checked on the landing URL. Full method and numbers: [eval/live/RESULTS.md](eval/live/RESULTS.md).
+same model (DeepSeek `deepseek-flash`). Success is checked on the landing URL.
 
 - **Python SDK, known goal, new topic:** 0 model calls in 19 of 19 runs after the first learning run, about
   3.8 s against 9 s for the plain agent. Success 19/20 for both.
