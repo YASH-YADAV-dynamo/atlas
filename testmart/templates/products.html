@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% from "_macros.html" import pagination %}
+{% block title %}Products{% endblock %}
+{% block heading %}Products{% endblock %}
+{% block content %}
+<table>
+  <thead><tr><th>SKU</th><th>Name</th><th>Price</th><th>Details</th></tr></thead>
+  <tbody>
+  {% for p in rows %}
+  <tr><td>{{ p.sku }}</td><td>{{ p.name }}</td><td>{{ p.price_cents|money }}</td>
+      <td><a href="/products/{{ p.id }}/edit">Edit product</a></td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+{{ pagination("/products", page, pages) }}
+{% endblock %}

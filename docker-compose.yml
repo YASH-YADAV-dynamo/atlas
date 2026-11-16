@@ -1,0 +1,91 @@
+# Local quickstart: HydraDB + TestMart (demo site) + Atlas API, all on this machine.
+#   python scripts/setup.py && docker compose up -d --build
+# Then open http://localhost:8000
+name: atlas-local
+
+services:
+  hydradb-init: # the volume is created root-owned; the image runs as uid 10001
+    image: ghcr.io/hydra-db/hydradb:sha-9166374
+    user: "0:0"
+    entrypoint: ["sh", "-c", "mkdir -p /data/store /data/cache && chown -R 10001:10001 /data"]
+    volumes:
+      - hydradb-data:/data
+
+  hydradb:
+    image: ghcr.io/hydra-db/hydradb:sha-9166374
+    depends_on:
+      hydradb-init: {condition: service_completed_successfully}
+    environment:
+      CLOUD_PROVIDER: local
+      LOCAL_PATH: /data/store
+      GRAPH_NAMESPACE: default
+      GRAPH_ID: default
+      GRAPH_CELL_ID: cell-0
+      GRAPH_CELLS: cell-0
+      GRAPH_NODE_ID: node-0
+      GRAPH_BOLT_NODE_ADDRESSES: node-0=0.0.0.0:7687
+      GRAPH_ADVERTISED_BOLT_ADDR: hydradb:7687
+      GRAPH_DATA_CACHE_DIR: /data/cache
+      GRAPH_AUTH_TOKEN_FILE: /run/hydradb/token
+      GRAPH_ALLOW_PLAINTEXT: "true" # local compose network only
+      GRAPH_USAGE_REPORT_ENABLED: "false"
+      RUST_MIN_STACK: "33554432"
+    volumes:
+      - hydradb-data:/data
+      - ./.hydradb-token:/run/hydradb/token:ro # written by scripts/setup.py
+    ports:
+      - "127.0.0.1:${HYDRADB_PORT:-7687}:7687" # Bolt, for make test-int and local development
+    healthcheck:
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/8443 && printf 'GET /healthz HTTP/1.0\r\n\r\n' >&3 && grep -q ok <&3"]
+      interval: 5s
+      timeout: 3s
+      retries: 24
+      start_period: 10s
+
+  testmart:
+    build: .
+    command: ["python", "-m", "testmart"]
+    env_file: .env
+    environment:
+      TESTMART_HOST: 0.0.0.0
+      TESTMART_PORT: "8100"
+      TESTMART_DB: /data/testmart/testmart.db
+    volumes:
+      - testmart-data:/data/testmart
+    ports:
+      - "127.0.0.1:${TESTMART_PORT_HOST:-8100}:8100"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request as u; u.urlopen('http://127.0.0.1:8100/healthz', timeout=3)"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 10s
+
+  api:
+    build: .
+    env_file: .env
+    environment:
+      HYDRADB_URL: bolt://hydradb:7687
+      TESTMART_URL: http://testmart:8100
+      MCP_MODE: planner
+      ATLAS_KEYS_PATH: /data/mcp_keys.json
+      MODEL_LEDGER_PATH: /data/model_ledger.json
+    shm_size: 1gb # Chromium
+    volumes:
+      - api-data:/data
+    ports:
+      - "127.0.0.1:${ATLAS_PORT:-8000}:8000"
+    depends_on:
+      hydradb: {condition: service_healthy}
+      testmart: {condition: service_healthy}
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request as u; u.urlopen('http://127.0.0.1:8000/healthz', timeout=3)"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 20s
+
+volumes:
+  hydradb-data:
+  testmart-data:
+  api-data:

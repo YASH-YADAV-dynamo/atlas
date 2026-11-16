@@ -1,0 +1,318 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<meta name="theme-color" content="#06090c">
+<title>Atlas: the agent context layer for browser agents</title>
+<meta name="description" content="Atlas is a live context store in HydraDB for fleets of browser agents: pages, actions, skills, MCP tool definitions and resolved entities in one graph. One shortest-path query plans the route; agents pull only what the task needs. Connect over MCP.">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Atlas">
+<meta property="og:title" content="Atlas: the shared map under your browser agents">
+<meta property="og:description" content="An agent context layer on HydraDB. Browser agents stop re-exploring the same sites: plan with one graph query, call the model only where the map ends.">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:title" content="Atlas: the agent context layer for browser agents">
+<meta name="twitter:description" content="A live context store in HydraDB. Skills, tools, entities and routes in a graph, over MCP.">
+<link rel="icon" type="image/svg+xml" href="/favicon.svg">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600&amp;family=Instrument+Serif:ital@1&amp;family=JetBrains+Mono:wght@400;500;600&amp;display=swap">
+<link rel="stylesheet" href="base.css">
+<link rel="stylesheet" href="site.css">
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="snav">
+  <nav class="wrap in" aria-label="Main">
+    <a class="brand" href="/" aria-label="Atlas home"><svg viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="8" fill="#0b1014" stroke="#27343d"/><path d="M9 23C9 14.5 23 17.5 23 9" fill="none" stroke="#5eead4" stroke-width="2.6" stroke-linecap="round"/><circle cx="9" cy="23" r="3.8" fill="#5eead4"/><circle cx="23" cy="9" r="3.4" fill="#0b1014" stroke="#f5b042" stroke-width="2.4"/></svg>Atlas</a>
+    <div class="links"><a href="/#how">How it works</a><a href="/app.html">Playground</a><a href="/docs.html">Docs</a><a href="#" class="gh">GitHub</a><button type="button" class="btn primary" data-connect>Connect your agent</button></div>
+  </nav>
+</header>
+<main id="main">
+<section class="hero wrap">
+  <p class="eyebrow"><span>Agent context layer</span><span>MCP</span><span>Built on HydraDB</span></p>
+  <h1>The shared map under every <em class="serif">browser agent.</em></h1>
+  <p class="sub">Fleets of Chromium instances re-explore the same sites, and every extra step is another model call and more browser seconds. Atlas is a live context store in HydraDB: pages, actions, skills and resolved entities in one graph, so the first agent explores and the rest follow the route.</p>
+  <div class="cta"><a class="btn primary big" href="/app.html">Run a live task</a><button type="button" class="btn big" data-connect>Connect your agent</button></div>
+  <figure class="fig">
+    <svg class="fleet" viewBox="0 0 680 330" role="img" aria-label="Animated diagram. Four browser agents head for the same site. The first explores slowly, calling the model at every step, and writes the route into the Atlas map. The other three read the route from the map and follow it fast, with zero model calls.">
+<title>Fleet of browser agents sharing one Atlas map</title>
+<rect x="170" y="14" width="480" height="84" rx="12" class="mapbox"/>
+<text x="186" y="36" class="lbl">Atlas map in HydraDB</text>
+<text x="634" y="36" class="lbl q" text-anchor="end">one shortest-path query</text>
+<line x1="230" y1="68" x2="330" y2="68" class="edge"/>
+<line x1="330" y1="68" x2="430" y2="68" class="edge"/>
+<line x1="430" y1="68" x2="530" y2="68" class="edge"/>
+<line x1="230" y1="68" x2="330" y2="68" class="edge lit e0"/>
+<line x1="330" y1="68" x2="430" y2="68" class="edge lit e1"/>
+<line x1="430" y1="68" x2="530" y2="68" class="edge lit e2"/>
+<circle cx="230" cy="68" r="9" class="node"/><circle cx="230" cy="68" r="9" class="node lit n0"/>
+<text x="230" y="90" text-anchor="middle" class="lbl s">Orders</text>
+<circle cx="330" cy="68" r="9" class="node"/><circle cx="330" cy="68" r="9" class="node lit n1"/>
+<text x="330" y="90" text-anchor="middle" class="lbl s">Order</text>
+<circle cx="430" cy="68" r="9" class="node"/><circle cx="430" cy="68" r="9" class="node lit n2"/>
+<text x="430" y="90" text-anchor="middle" class="lbl s">Refund</text>
+<circle cx="530" cy="68" r="9" class="node"/><circle cx="530" cy="68" r="9" class="node lit n3"/>
+<text x="530" y="90" text-anchor="middle" class="lbl s">Confirm</text>
+<line x1="230" y1="100" x2="230" y2="300" class="drop"/>
+<line x1="330" y1="100" x2="330" y2="300" class="drop"/>
+<line x1="430" y1="100" x2="430" y2="300" class="drop"/>
+<line x1="530" y1="100" x2="530" y2="300" class="drop"/>
+<g class="lane a1">
+<g transform="translate(14 133)"><rect width="52" height="34" rx="5" class="win"/><path d="M0 10h52" class="winbar"/><circle cx="8" cy="5" r="1.8" class="wdot"/><circle cx="14" cy="5" r="1.8" class="wdot"/><circle cx="20" cy="5" r="1.8" class="wdot"/><rect x="8" y="16" width="22" height="3" rx="1.5" class="wline"/><rect x="8" y="22" width="34" height="3" rx="1.5" class="wline"/></g>
+<line x1="80" y1="150" x2="620" y2="150" class="track slow"/>
+<rect x="225" y="145" width="10" height="10" class="wp m" transform="rotate(45 230 150)"/>
+<rect x="325" y="145" width="10" height="10" class="wp m" transform="rotate(45 330 150)"/>
+<rect x="425" y="145" width="10" height="10" class="wp m" transform="rotate(45 430 150)"/>
+<rect x="525" y="145" width="10" height="10" class="wp m" transform="rotate(45 530 150)"/>
+<g class="mover"><rect x="83" y="143" width="14" height="14" transform="rotate(45 90 150)" class="dotm"/></g>
+<text x="640" y="140" text-anchor="end" class="lbl mc">a model call per step</text>
+</g>
+<g class="lane a2">
+<g transform="translate(14 183)"><rect width="52" height="34" rx="5" class="win"/><path d="M0 10h52" class="winbar"/><circle cx="8" cy="5" r="1.8" class="wdot"/><circle cx="14" cy="5" r="1.8" class="wdot"/><circle cx="20" cy="5" r="1.8" class="wdot"/><rect x="8" y="16" width="22" height="3" rx="1.5" class="wline"/><rect x="8" y="22" width="34" height="3" rx="1.5" class="wline"/></g>
+<line x1="80" y1="200" x2="620" y2="200" class="track fast"/>
+<circle cx="230" cy="200" r="4" class="wp"/>
+<circle cx="330" cy="200" r="4" class="wp"/>
+<circle cx="430" cy="200" r="4" class="wp"/>
+<circle cx="530" cy="200" r="4" class="wp"/>
+<g class="mover"><circle cx="90" cy="200" r="7" class="dotf"/></g>
+<text x="640" y="190" text-anchor="end" class="lbl done">no model calls</text>
+</g>
+<g class="lane a3">
+<g transform="translate(14 233)"><rect width="52" height="34" rx="5" class="win"/><path d="M0 10h52" class="winbar"/><circle cx="8" cy="5" r="1.8" class="wdot"/><circle cx="14" cy="5" r="1.8" class="wdot"/><circle cx="20" cy="5" r="1.8" class="wdot"/><rect x="8" y="16" width="22" height="3" rx="1.5" class="wline"/><rect x="8" y="22" width="34" height="3" rx="1.5" class="wline"/></g>
+<line x1="80" y1="250" x2="620" y2="250" class="track fast"/>
+<circle cx="230" cy="250" r="4" class="wp"/>
+<circle cx="330" cy="250" r="4" class="wp"/>
+<circle cx="430" cy="250" r="4" class="wp"/>
+<circle cx="530" cy="250" r="4" class="wp"/>
+<g class="mover"><circle cx="90" cy="250" r="7" class="dotf"/></g>
+<text x="640" y="240" text-anchor="end" class="lbl done">no model calls</text>
+</g>
+<g class="lane a4">
+<g transform="translate(14 283)"><rect width="52" height="34" rx="5" class="win"/><path d="M0 10h52" class="winbar"/><circle cx="8" cy="5" r="1.8" class="wdot"/><circle cx="14" cy="5" r="1.8" class="wdot"/><circle cx="20" cy="5" r="1.8" class="wdot"/><rect x="8" y="16" width="22" height="3" rx="1.5" class="wline"/><rect x="8" y="22" width="34" height="3" rx="1.5" class="wline"/></g>
+<line x1="80" y1="300" x2="620" y2="300" class="track fast"/>
+<circle cx="230" cy="300" r="4" class="wp"/>
+<circle cx="330" cy="300" r="4" class="wp"/>
+<circle cx="430" cy="300" r="4" class="wp"/>
+<circle cx="530" cy="300" r="4" class="wp"/>
+<g class="mover"><circle cx="90" cy="300" r="7" class="dotf"/></g>
+<text x="640" y="290" text-anchor="end" class="lbl done">no model calls</text>
+</g>
+</svg>
+    <figcaption class="legend">
+      <span><span class="badge model">MODEL</span> The first agent explores, one model call per step, and writes the route into the graph.</span>
+      <span><span class="badge map">MAP</span> Every agent after it reads the route with one query and drives it. No model calls.</span>
+    </figcaption>
+  </figure>
+</section>
+
+<section class="block wrap" id="problem">
+  <p class="kicker">The problem</p>
+  <h2>Every agent in the fleet starts from zero.</h2>
+  <p class="lede">Browser agents are stateless about the web. Whatever one instance learned about a site is gone before the next instance opens its first tab.</p>
+  <ul class="cards three">
+    <li><h3>The same exploration, again</h3><p>Ten agents refunding ten orders each rediscover where Orders lives and what Refund looks like. The site did not change; the work was repeated.</p></li>
+    <li><h3>A model call per click</h3><p>Chaining round trips to decide each step costs model calls and seconds, and every call carries a page worth of context tokens.</p></li>
+    <li><h3>Context preloaded, not pulled</h3><p>The usual fix is stuffing every tool and every page description into the prompt up front. Most of it is irrelevant to the task at hand.</p></li>
+  </ul>
+</section>
+
+<section class="block wrap" id="how">
+  <p class="kicker">How it works</p>
+  <h2>A task is a route. Atlas finds it and only leaves it where the map ends.</h2>
+  <ol class="route">
+    <li><span class="n">01</span><h3>Locate</h3><p>Fingerprint the current page and find the node of the map the browser stands on.</p></li>
+    <li><span class="n">02</span><h3>Plan</h3><p>One HydraDB shortest-path query returns the cheapest, most reliable route to the goal.</p></li>
+    <li><span class="n">03</span><h3>Drive the known route</h3><p>Replay each known action in Chromium. No model in the loop.</p></li>
+    <li class="detour"><span class="n">04</span><h3>Explore only where the map ends</h3><p>At the frontier the model takes one step, and only one.</p></li>
+    <li><span class="n">05</span><h3>Learn</h3><p>Every step is reported back, so the next agent drives what this one explored.</p></li>
+  </ol>
+  <div class="split">
+    <div class="term" role="img" aria-label="Example trace. Agent 1 on an empty map: every step is taken by the model. Agent 2, same task type: every step follows the map and no model is called.">
+      <div class="run one">
+        <div class="cmd">agent 1 <b>&quot;Refund order ORD-1005&quot;</b> empty map</div>
+        <div class="ln" style="--i:0"><span class="badge model">MODEL</span><span>open Orders</span></div>
+        <div class="ln" style="--i:1"><span class="badge model">MODEL</span><span>open order ORD-1005</span></div>
+        <div class="ln" style="--i:2"><span class="badge model">MODEL</span><span>click Refund, confirm</span></div>
+        <div class="sum">explored and saved to the graph</div>
+      </div>
+      <div class="run two">
+        <div class="cmd">agent 2 <b>&quot;Refund order ORD-1017&quot;</b> same task type</div>
+        <div class="ln" style="--i:0"><span class="badge map">MAP</span><span>open Orders</span></div>
+        <div class="ln" style="--i:1"><span class="badge map">MAP</span><span>open order ORD-1017</span></div>
+        <div class="ln" style="--i:2"><span class="badge map">MAP</span><span>click Refund, confirm</span></div>
+        <div class="sum"><b>No model calls.</b> one graph query planned it</div>
+      </div>
+    </div>
+    <div class="aside">
+      <h3>Self-repair</h3>
+      <p>When a site changes, the step that stopped working is penalised, the plan routes around it, and the model re-explores only that edge. Change events are kept in the graph.</p>
+      <p class="note">Example trace for illustration. The Playground runs the real thing.</p>
+    </div>
+  </div>
+</section>
+
+<section class="block wrap" id="context">
+  <p class="kicker">An agent context layer</p>
+  <h2>Context your agent pulls, not preloads.</h2>
+  <p class="lede">Atlas keeps a live context store in HydraDB. Instead of loading every tool and every page into the prompt, your agent traverses the graph and pulls only what the current task needs: one query, not a chain of round trips.</p>
+  <ul class="cards five">
+    <li><h3>Skills in a graph</h3><p>Routes that worked repeatedly are compressed into reusable skills your agent finds by goal.</p></li>
+    <li><h3>Tool and MCP definitions in a graph</h3><p>Pages and the actions between them are nodes and edges with success rates, so tools are matched to the page, not dumped in a list.</p></li>
+    <li><h3>Resolved entities</h3><p>Order ids, users and items already found are stored with where they were last seen. Recall, do not re-search.</p></li>
+    <li><h3>Change events</h3><p>What stopped working, when, and which edge replaced it.</p></li>
+    <li><h3>Graph traversal</h3><p>Shortest path by reliability and speed. Responses are compact and capped, which keeps context tokens low.</p></li>
+  </ul>
+  <div class="compare">
+    <div><span class="badge model">PRELOAD</span><p>Every tool definition and page description in the prompt before the task starts. More context tokens, more noise, and a model call to chain each step.</p></div>
+    <div><span class="badge map">PULL</span><p><code>find_skills</code>, then <code>plan</code>: the route for this goal from this page, nothing else. The model is asked only where the map ends.</p></div>
+  </div>
+</section>
+
+<section class="block wrap" id="setup">
+  <p class="kicker">One paste</p>
+  <h2>Let your agent set itself up.</h2>
+  <p class="lede">Copy this into Claude Code, Cursor, Codex or any agent that can run commands. It reads <a href="/llms.txt">llms.txt</a>, creates a private key, adds the Atlas MCP server, checks the tools, and tells you when it is connected. The same file teaches it how to use Atlas well.</p>
+  <div class="codeblock"><header><span>Prompt for your agent</span><button class="copy" type="button" data-copy="c-setup">Copy</button></header>
+<pre><code id="c-setup">Set up Atlas for me. Read https://atlas.yashdynamo.fun/llms.txt and follow
+"Set up Atlas": create a private key, add the Atlas MCP server to this
+client, check that the four atlas_ tools are listed, then tell me it is
+connected. Keep the key secret and never print it in full.
+From then on, whenever you work on a website, follow "Use Atlas effectively"
+in the same file: plan first, report every step.</code></pre></div>
+  <p class="fine">Prefer to do it by hand? The steps are below. Your key is shown once and stored only as a keyed hash.</p>
+</section>
+
+<section class="block wrap" id="connect">
+  <p class="kicker">Connect your agent</p>
+  <h2>Sixty seconds over MCP.</h2>
+  <p class="lede">Add Atlas as an MCP server, or use the Route API, the Python SDK or trace import. The demo key is read-only on a pre-built map; a private key gives your agent its own map to write to.</p>
+  <div class="tabs">
+    <div class="tablist" role="tablist" aria-label="Integration method">
+      <button type="button" role="tab" id="t-mcp" aria-controls="p-mcp" aria-selected="true">MCP</button>
+      <button type="button" role="tab" id="t-api" aria-controls="p-api" aria-selected="false" tabindex="-1">Route API</button>
+      <button type="button" role="tab" id="t-sdk" aria-controls="p-sdk" aria-selected="false" tabindex="-1">Python SDK</button>
+      <button type="button" role="tab" id="t-trace" aria-controls="p-trace" aria-selected="false" tabindex="-1">Import traces</button>
+    </div>
+    <div class="panelc" role="tabpanel" id="p-mcp" aria-labelledby="t-mcp">
+      <div class="trsw" role="tablist" aria-label="Connection transport">
+        <button type="button" role="tab" id="tr-remote" aria-controls="tr-panel" aria-selected="true">Remote (HTTP)</button>
+        <button type="button" role="tab" id="tr-local" aria-controls="tr-panel" aria-selected="false" tabindex="-1">Local (stdio)</button>
+      </div>
+      <div id="tr-panel" role="tabpanel" aria-labelledby="tr-remote">
+        <p id="tr-mean"></p>
+        <div class="codeblock"><header><span>Config file</span><button class="copy" type="button" data-copy="c-tr-json">Copy</button></header>
+<pre><code id="c-tr-json"></code></pre></div>
+        <div class="codeblock"><header><span id="tr-cli-l">Command line</span><button class="copy" type="button" data-copy="c-tr-cli">Copy</button></header>
+<pre><code id="c-tr-cli"></code></pre></div>
+        <div class="codeblock"><header><span>No header support? Use this URL</span><button class="copy" type="button" data-copy="c-tr-path">Copy</button></header>
+<pre><code id="c-tr-path"></code></pre></div>
+        <p class="fine">Treat any URL that contains your key like a password. Streamable HTTP only; SSE is not offered. Endpoint: <code id="mcp-url-label">https://atlas.yashdynamo.fun/mcp</code></p>
+      </div>
+      <div class="keyrow">
+        <button class="btn primary" type="button" data-connect>Connect: key, editor links and examples</button>
+        <a class="btn" href="/docs.html#connect">All clients</a>
+      </div>
+    </div>
+    <div class="panelc" role="tabpanel" id="p-api" aria-labelledby="t-api" hidden>
+      <p>Plain HTTP from any language: locate the page, plan the route, report each step.</p>
+      <div class="codeblock"><header><span>curl</span><button class="copy" type="button" data-copy="c-api">Copy</button></header>
+<pre><code id="c-api">curl -s -X POST https://atlas.yashdynamo.fun/v1/plan \
+  -H "Authorization: Bearer $ATLAS_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"site": "shop", "state_id": 1,
+       "goal_text": "Refund order 1042",
+       "params": {"order_id": "1042"}}'</code></pre></div>
+    </div>
+    <div class="panelc" role="tabpanel" id="p-sdk" aria-labelledby="t-sdk" hidden>
+      <p>A thin typed client. Your agent step is called only where the map ends.</p>
+      <div class="codeblock"><header><span>Python</span><button class="copy" type="button" data-copy="c-sdk">Copy</button></header>
+<pre><code id="c-sdk">from atlas_sdk import Atlas
+
+atlas = Atlas("https://atlas.yashdynamo.fun", api_key, site="shop.example")
+summary = atlas.session(driver).run(
+    "Refund order 1042", {"order_id": "1042"}, fallback=my_agent_step)</code></pre></div>
+    </div>
+    <div class="panelc" role="tabpanel" id="p-trace" aria-labelledby="t-trace" hidden>
+      <p>Already have recorded runs? Import them to seed the map without running anything again.</p>
+      <div class="codeblock"><header><span>Shell</span><button class="copy" type="button" data-copy="c-trace">Copy</button></header>
+<pre><code id="c-trace">ATLAS_API_URL=https://atlas.yashdynamo.fun \
+ATLAS_API_KEY=your-key \
+python -m atlas.import_trace runs.jsonl</code></pre></div>
+    </div>
+  </div>
+</section>
+
+<section class="block wrap" id="faq">
+  <p class="kicker">FAQ</p>
+  <h2>Questions builders ask.</h2>
+  <div class="faq">
+    <details><summary>Does Atlas run my browser?</summary><p>No. The hosted server runs in planner mode: your agent drives its own Chromium, Playwright or cloud browser, and Atlas plans and learns. It never opens a browser or acts on a site itself.</p></details>
+    <details><summary>What is stored?</summary><p>Abstract pages (URL template, title and a signature of the controls, not the page text), actions with <code>{slot}</code> placeholders instead of values, goals, skills, resolved entities and change events. Nothing else.</p></details>
+    <details><summary>Is my map private?</summary><p>A private key gets its own namespace in HydraDB: nothing you report is visible to other keys. The public demo key is read-only on a shared map. Keys are stored only as keyed hashes.</p></details>
+    <details><summary>What happens when a site changes?</summary><p>The step that fails is penalised, the plan routes around it, and the model re-explores only that edge. The change is recorded as an event on the graph.</p></details>
+    <details><summary>Which agents work with it?</summary><p>Any MCP client over streamable HTTP, or any code that can call the Route API. The Python SDK wraps the loop for Playwright-style drivers.</p></details>
+  </div>
+</section>
+
+<section class="wrap final">
+  <h2>Stop paying to re-explore the same site.</h2>
+  <div class="cta"><a class="btn primary big" href="/app.html">Run a live task</a><a class="btn big" href="/docs.html">Read the docs</a></div>
+</section>
+</main>
+<div class="wrap"><footer class="site">
+  <div><a class="brand" href="/"><svg viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="8" fill="#0b1014" stroke="#27343d"/><path d="M9 23C9 14.5 23 17.5 23 9" fill="none" stroke="#5eead4" stroke-width="2.6" stroke-linecap="round"/><circle cx="9" cy="23" r="3.8" fill="#5eead4"/><circle cx="23" cy="9" r="3.4" fill="#0b1014" stroke="#f5b042" stroke-width="2.4"/></svg>Atlas</a>
+  <p>Made by Yash &middot; <a href="https://x.com/yashastro23" target="_blank" rel="noopener noreferrer">X @yashastro23</a></p>
+  <p>Built on the open-source HydraDB engine.</p></div>
+  <div class="fl"><a href="/docs.html">Docs</a><a href="/app.html">Playground</a><a href="/llms.txt">llms.txt</a><a href="#">GitHub</a></div>
+</footer></div>
+<script src="chrome.js" defer></script>
+<script>
+(function () {
+  var mode = "remote";
+  function render(s) {
+    var key = s.key || "<your-key>", remote = mode === "remote";
+    var auth = "Authorization: Bearer " + key;
+    var pathUrl = ""; try { pathUrl = new URL(s.url).origin + "/mcp/k/" + key; } catch (e) { pathUrl = "https://atlas.yashdynamo.fun/mcp/k/" + key; }
+    function put(id, v) { document.getElementById(id).textContent = v; }
+    put("tr-mean", remote ? "Your client connects straight to the hosted URL over streamable HTTP and sends the key in an Authorization header. Nothing to install." : "Your client launches a command and talks to it over stdio. For hosted Atlas that is the standard mcp-remote bridge (needs Node.js); a self-hosted Atlas can run python -m atlas.mcp instead.");
+    put("c-tr-json", JSON.stringify(remote ? { mcpServers: { atlas: { type: "http", url: s.url, headers: { Authorization: "Bearer " + key } } } } : { mcpServers: { atlas: { command: "npx", args: ["-y", "mcp-remote", s.url, "--header", auth] } } }, null, 2));
+    put("tr-cli-l", remote ? "Check from a terminal" : "Command line");
+    put("c-tr-cli", remote ? "curl -si " + s.url + ' -H "' + auth + '" -H "Content-Type: application/json" -H "Accept: application/json, text/event-stream" -d \'{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"curl","version":"0"}}}\'' : "npx -y mcp-remote " + s.url + ' --header "' + auth + '"');
+    put("c-tr-path", remote ? pathUrl : "npx -y mcp-remote " + pathUrl);
+    put("mcp-url-label", s.url);
+    ["remote", "local"].forEach(function (m) { var t = document.getElementById("tr-" + m); t.setAttribute("aria-selected", String(m === mode)); t.tabIndex = m === mode ? 0 : -1; });
+    document.getElementById("tr-panel").setAttribute("aria-labelledby", "tr-" + mode);
+  }
+  document.addEventListener("click", function (e) {
+    var b = e.target.closest && e.target.closest(".trsw button");
+    if (b) { mode = b.id === "tr-local" ? "local" : "remote"; render(window.AtlasConnect.state); }
+  });
+  window.addEventListener("DOMContentLoaded", function () {
+    render(window.AtlasConnect.state);
+    window.AtlasConnect.onChange(render);
+  });
+  var tabs = Array.prototype.slice.call(document.querySelectorAll('.tablist [role="tab"]'));
+  function show(t, focus) {
+    tabs.forEach(function (x) {
+      var on = x === t;
+      x.setAttribute("aria-selected", on ? "true" : "false");
+      x.tabIndex = on ? 0 : -1;
+      document.getElementById(x.getAttribute("aria-controls")).hidden = !on;
+    });
+    if (focus) t.focus();
+  }
+  tabs.forEach(function (t, i) {
+    t.addEventListener("click", function () { show(t, false); });
+    t.addEventListener("keydown", function (e) {
+      var j = e.key === "ArrowRight" ? i + 1 : e.key === "ArrowLeft" ? i - 1 : e.key === "Home" ? 0 : e.key === "End" ? tabs.length - 1 : -1;
+      if (j < 0) return;
+      e.preventDefault();
+      show(tabs[(j + tabs.length) % tabs.length], true);
+    });
+  });
+})();
+</script>
+</body>
+</html>

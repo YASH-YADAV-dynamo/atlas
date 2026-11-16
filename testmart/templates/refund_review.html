@@ -1,0 +1,7 @@
+{% extends "base.html" %}
+{% block title %}Review refund{% endblock %}
+{% block heading %}Review refund for order {{ order.number }}{% endblock %}
+{% block content %}
+<p>{{ order.customer_name }}: {{ order.product_name }} x {{ order.quantity }}, {{ order.total_cents|money }}.</p>
+<p><a href="/orders/{{ order.id }}/refund">Continue to refund</a> <a href="/orders/{{ order.id }}">Cancel</a></p>
+{% endblock %}

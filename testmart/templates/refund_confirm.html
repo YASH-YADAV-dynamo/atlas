@@ -1,0 +1,10 @@
+{% extends "base.html" %}
+{% block title %}Confirm refund{% endblock %}
+{% block heading %}Confirm refund{% endblock %}
+{% block content %}
+<p>Refund order {{ order.number }} for {{ order.total_cents|money }}? This cannot be undone.</p>
+<form method="post" action="/orders/{{ order.id }}/refund">
+  <button type="submit">Confirm refund</button>
+  <a href="/orders/{{ order.id }}">Cancel</a>
+</form>
+{% endblock %}

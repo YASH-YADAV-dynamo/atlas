@@ -1,0 +1,41 @@
+*.egg-info/
+*.pyc
+.claude/
+.env
+.hypothesis/
+.pytest_cache/
+.ruff_cache/
+.venv/
+/results/tmp/
+__pycache__/
+node_modules/
+
+# Internal planning docs (kept locally, not published)
+gtm/
+docs/SPEC.md
+docs/ORCHESTRATION.md
+docs/STATUS.md
+docs/CONTEXT.md
+docs/cards/
+docs/rca/
+
+# HydraDB local token file
+deploy/hydradb/.hydradb-token
+
+# Model spend ledger
+data/
+
+# Internal dev process (kept locally, not published)
+hidden_tests/
+spikes/
+scripts/check_test_integrity.py
+scripts/test_integrity.sha256
+docs/requirements.md
+docs/PLAN_V2.md
+docs/PITCH_PLAN.md
+results/placeholder_map.md
+.github/
+docs/deploy.md
+deploy/
+docs/hydradb-notes.md
+/.hydradb-token

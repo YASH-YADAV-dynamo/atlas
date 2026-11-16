@@ -1,0 +1,332 @@
+{
+  "source": 714751317287003,
+  "target": 714751317287012,
+  "rows": [
+    {
+      "path": {
+        "nodes": [
+          {
+            "id": 714751317287003,
+            "element_id": "714751317287003",
+            "labels": [
+              "State"
+            ],
+            "properties": {
+              "sig": "sig-714751317287003"
+            }
+          },
+          {
+            "id": 714751317287008,
+            "element_id": "714751317287008",
+            "labels": [
+              "State"
+            ],
+            "properties": {}
+          },
+          {
+            "id": 714751317287009,
+            "element_id": "714751317287009",
+            "labels": [
+              "State"
+            ],
+            "properties": {}
+          },
+          {
+            "id": 714751317287010,
+            "element_id": "714751317287010",
+            "labels": [
+              "State"
+            ],
+            "properties": {}
+          },
+          {
+            "id": 714751317287011,
+            "element_id": "714751317287011",
+            "labels": [
+              "State"
+            ],
+            "properties": {}
+          },
+          {
+            "id": 714751317287012,
+            "element_id": "714751317287012",
+            "labels": [
+              "State"
+            ],
+            "properties": {
+              "sig": "sig-9"
+            }
+          }
+        ],
+        "relationships": [
+          {
+            "id": -1,
+            "element_id": "structural:ACT:714751317287003:714751317287008",
+            "type": "ACT",
+            "start": 714751317287003,
+            "end": 714751317287008,
+            "start_element_id": "714751317287003",
+            "end_element_id": "714751317287008",
+            "properties": {
+              "cost": 10
+            }
+          },
+          {
+            "id": -2,
+            "element_id": "structural:ACT:714751317287008:714751317287009",
+            "type": "ACT",
+            "start": 714751317287008,
+            "end": 714751317287009,
+            "start_element_id": "714751317287008",
+            "end_element_id": "714751317287009",
+            "properties": {
+              "cost": 1
+            }
+          },
+          {
+            "id": -3,
+            "element_id": "structural:ACT:714751317287009:714751317287010",
+            "type": "ACT",
+            "start": 714751317287009,
+            "end": 714751317287010,
+            "start_element_id": "714751317287009",
+            "end_element_id": "714751317287010",
+            "properties": {
+              "cost": 1
+            }
+          },
+          {
+            "id": -4,
+            "element_id": "structural:ACT:714751317287010:714751317287011",
+            "type": "ACT",
+            "start": 714751317287010,
+            "end": 714751317287011,
+            "start_element_id": "714751317287010",
+            "end_element_id": "714751317287011",
+            "properties": {
+              "cost": 1
+            }
+          },
+          {
+            "id": -5,
+            "element_id": "structural:ACT:714751317287011:714751317287012",
+            "type": "ACT",
+            "start": 714751317287011,
+            "end": 714751317287012,
+            "start_element_id": "714751317287011",
+            "end_element_id": "714751317287012",
+            "properties": {
+              "cost": 1
+            }
+          }
+        ]
+      },
+      "pathCost": 14
+    },
+    {
+      "path": {
+        "nodes": [
+          {
+            "id": 714751317287003,
+            "element_id": "714751317287003",
+            "labels": [
+              "State"
+            ],
+            "properties": {
+              "sig": "sig-714751317287003"
+            }
+          },
+          {
+            "id": 714751317287004,
+            "element_id": "714751317287004",
+            "labels": [
+              "State"
+            ],
+            "properties": {
+              "sig": "sig-714751317287004"
+            }
+          },
+          {
+            "id": 714751317287005,
+            "element_id": "714751317287005",
+            "labels": [
+              "State"
+            ],
+            "properties": {
+              "sig": "sig-714751317287005"
+            }
+          },
+          {
+            "id": 714751317287006,
+            "element_id": "714751317287006",
+            "labels": [
+              "State"
+            ],
+            "properties": {}
+          },
+          {
+            "id": 714751317287007,
+            "element_id": "714751317287007",
+            "labels": [
+              "State"
+            ],
+            "properties": {}
+          },
+          {
+            "id": 714751317287008,
+            "element_id": "714751317287008",
+            "labels": [
+              "State"
+            ],
+            "properties": {}
+          },
+          {
+            "id": 714751317287009,
+            "element_id": "714751317287009",
+            "labels": [
+              "State"
+            ],
+            "properties": {}
+          },
+          {
+            "id": 714751317287010,
+            "element_id": "714751317287010",
+            "labels": [
+              "State"
+            ],
+            "properties": {}
+          },
+          {
+            "id": 714751317287011,
+            "element_id": "714751317287011",
+            "labels": [
+              "State"
+            ],
+            "properties": {}
+          },
+          {
+            "id": 714751317287012,
+            "element_id": "714751317287012",
+            "labels": [
+              "State"
+            ],
+            "properties": {
+              "sig": "sig-9"
+            }
+          }
+        ],
+        "relationships": [
+          {
+            "id": -1,
+            "element_id": "structural:ACT:714751317287003:714751317287004",
+            "type": "ACT",
+            "start": 714751317287003,
+            "end": 714751317287004,
+            "start_element_id": "714751317287003",
+            "end_element_id": "714751317287004",
+            "properties": {
+              "cost": 1
+            }
+          },
+          {
+            "id": -2,
+            "element_id": "structural:ACT:714751317287004:714751317287005",
+            "type": "ACT",
+            "start": 714751317287004,
+            "end": 714751317287005,
+            "start_element_id": "714751317287004",
+            "end_element_id": "714751317287005",
+            "properties": {
+              "cost": 1
+            }
+          },
+          {
+            "id": -3,
+            "element_id": "structural:ACT:714751317287005:714751317287006",
+            "type": "ACT",
+            "start": 714751317287005,
+            "end": 714751317287006,
+            "start_element_id": "714751317287005",
+            "end_element_id": "714751317287006",
+            "properties": {
+              "cost": 1
+            }
+          },
+          {
+            "id": -4,
+            "element_id": "structural:ACT:714751317287006:714751317287007",
+            "type": "ACT",
+            "start": 714751317287006,
+            "end": 714751317287007,
+            "start_element_id": "714751317287006",
+            "end_element_id": "714751317287007",
+            "properties": {
+              "cost": 1
+            }
+          },
+          {
+            "id": -5,
+            "element_id": "structural:ACT:714751317287007:714751317287008",
+            "type": "ACT",
+            "start": 714751317287007,
+            "end": 714751317287008,
+            "start_element_id": "714751317287007",
+            "end_element_id": "714751317287008",
+            "properties": {
+              "cost": 1
+            }
+          },
+          {
+            "id": -2,
+            "element_id": "structural:ACT:714751317287008:714751317287009",
+            "type": "ACT",
+            "start": 714751317287008,
+            "end": 714751317287009,
+            "start_element_id": "714751317287008",
+            "end_element_id": "714751317287009",
+            "properties": {
+              "cost": 1
+            }
+          },
+          {
+            "id": -3,
+            "element_id": "structural:ACT:714751317287009:714751317287010",
+            "type": "ACT",
+            "start": 714751317287009,
+            "end": 714751317287010,
+            "start_element_id": "714751317287009",
+            "end_element_id": "714751317287010",
+            "properties": {
+              "cost": 1
+            }
+          },
+          {
+            "id": -4,
+            "element_id": "structural:ACT:714751317287010:714751317287011",
+            "type": "ACT",
+            "start": 714751317287010,
+            "end": 714751317287011,
+            "start_element_id": "714751317287010",
+            "end_element_id": "714751317287011",
+            "properties": {
+              "cost": 1
+            }
+          },
+          {
+            "id": -5,
+            "element_id": "structural:ACT:714751317287011:714751317287012",
+            "type": "ACT",
+            "start": 714751317287011,
+            "end": 714751317287012,
+            "start_element_id": "714751317287011",
+            "end_element_id": "714751317287012",
+            "properties": {
+              "cost": 1
+            }
+          }
+        ]
+      },
+      "pathCost": 9
+    }
+  ]
+}

@@ -1,0 +1,12 @@
+{% extends "base.html" %}
+{% block title %}Dashboard{% endblock %}
+{% block heading %}Dashboard{% endblock %}
+{% block content %}
+<p>{{ counts.orders }} orders, {{ counts.customers }} customers, {{ counts.products }} products.</p>
+<ul>
+  <li><a href="/orders">Go to orders</a></li>
+  <li><a href="/customers">Go to customers</a></li>
+  <li><a href="/products">Go to products</a></li>
+  <li><a href="/settings/general">Open settings</a></li>
+</ul>
+{% endblock %}

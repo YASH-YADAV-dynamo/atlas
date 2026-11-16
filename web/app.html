@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<meta name="theme-color" content="#06090c">
+<title>Playground: run a live task on Atlas</title>
+<meta name="description" content="Run one live task in the Atlas sandbox and watch the context graph fill in. MAP steps follow the graph; MODEL steps explore where it ends.">
+<link rel="icon" type="image/svg+xml" href="/favicon.svg">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600&amp;family=Instrument+Serif:ital@1&amp;family=JetBrains+Mono:wght@400;500;600&amp;display=swap">
+<link rel="stylesheet" href="base.css">
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="snav">
+  <nav class="wrap in" aria-label="Main">
+    <a class="brand" href="/" aria-label="Atlas home"><svg viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="8" fill="#0b1014" stroke="#27343d"/><path d="M9 23C9 14.5 23 17.5 23 9" fill="none" stroke="#5eead4" stroke-width="2.6" stroke-linecap="round"/><circle cx="9" cy="23" r="3.8" fill="#5eead4"/><circle cx="23" cy="9" r="3.4" fill="#0b1014" stroke="#f5b042" stroke-width="2.4"/></svg>Atlas</a>
+    <div class="links"><a href="/#how">How it works</a><a href="/app.html" aria-current="page" class="keep">Playground</a><a href="/docs.html">Docs</a><a href="#" class="gh">GitHub</a><button type="button" class="btn primary" data-connect>Connect your agent</button></div>
+  </nav>
+</header>
+<main id="main" class="wrap">
+  <section class="intro">
+    <div>
+      <p class="kicker">Playground</p>
+      <h1>Watch an agent <em class="serif">learn a route.</em></h1>
+      <p class="sub">Run one live task in the sandbox. Atlas plans from the graph where it can and calls the model only where the map ends, and you see the graph fill in as it goes. The task runs against a sample store inside the sandbox.</p>
+    </div>
+    <div class="startbox">
+      <button class="btn primary big" type="button" id="start">Run a live task</button>
+      <button class="btn" type="button" id="replay" hidden>Replay a map-only run (free)</button>
+      <p class="hint">A live run spends a small amount of model budget, so each visitor gets a limited number.</p>
+    </div>
+  </section>
+  <div id="notice" class="notice" role="status" hidden></div>
+
+  <div class="cols">
+    <section class="panel" aria-labelledby="h-run">
+      <h2 id="h-run">Live run</h2>
+      <p class="goal" id="goal-line" hidden></p>
+      <div class="status"><span class="dot off" id="status-dot"></span><span id="status-text" role="status" aria-live="polite">Ready.</span></div>
+      <div class="counters">
+        <div class="ctr"><b id="c-model">0</b><span class="badge model">MODEL</span> calls</div>
+        <div class="ctr"><b id="c-map">0</b><span class="badge map">MAP</span> steps</div>
+        <div class="ctr"><b id="c-secs">0.0</b><span>seconds</span></div>
+      </div>
+      <p class="hint" id="steps-empty">Steps appear here as they run.</p>
+      <ol class="steps" id="steps" aria-label="Step stream"></ol>
+      <div class="done" id="done-actions" hidden>
+        <p>Your agent can pull the same graph over MCP.</p>
+        <div class="done-row">
+          <button type="button" class="btn" id="tour-replay">Replay tour</button>
+          <button type="button" class="btn primary" data-connect>Connect your agent</button>
+        </div>
+      </div>
+    </section>
+    <section class="panel" aria-labelledby="h-map">
+      <h2 id="h-map">Context graph <span id="mapinfo" class="muted"></span></h2>
+      <p class="hint" id="shared">No pages yet. They appear as the run explores.</p>
+      <div class="graph-box" id="graphbox">
+        <svg id="graph" role="img" aria-label="Learned site map: pages as nodes, actions as edges"></svg>
+        <div id="map-empty" class="empty"><b>The graph is empty.</b><span>Run a live task and watch it draw.</span></div>
+      </div>
+      <ul class="legend" aria-label="Legend">
+        <li><svg class="lg" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="5" fill="var(--surface-2)" stroke="var(--idle)" stroke-width="2"/></svg>page</li>
+        <li><i class="sw good"></i>action</li>
+        <li><i class="sw path"></i>followed from the map</li>
+        <li><i class="sw model"></i>explored by the model</li>
+        <li><i class="sw bad"></i>failed</li>
+      </ul>
+    </section>
+  </div>
+</main>
+<div class="wrap"><footer class="site">
+  <div><a class="brand" href="/"><svg viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="8" fill="#0b1014" stroke="#27343d"/><path d="M9 23C9 14.5 23 17.5 23 9" fill="none" stroke="#5eead4" stroke-width="2.6" stroke-linecap="round"/><circle cx="9" cy="23" r="3.8" fill="#5eead4"/><circle cx="23" cy="9" r="3.4" fill="#0b1014" stroke="#f5b042" stroke-width="2.4"/></svg>Atlas</a>
+  <p>Made by Yash &middot; <a href="https://x.com/yashastro23" target="_blank" rel="noopener noreferrer">X @yashastro23</a></p>
+  <p>Built on the open-source HydraDB engine.</p></div>
+  <div class="fl"><a href="/docs.html">Docs</a><a href="/app.html">Playground</a><a href="/llms.txt">llms.txt</a><a href="#">GitHub</a></div>
+</footer></div>
+<div class="tour" id="tour" role="dialog" aria-modal="false" aria-labelledby="tour-title" aria-describedby="tour-body" tabindex="-1" hidden>
+  <div class="tour-top"><span class="tour-count" id="tour-count"></span><button type="button" class="tour-skip" id="tour-skip">Skip tour</button></div>
+  <div id="tour-live" aria-live="polite" aria-atomic="true"><h2 id="tour-title"></h2><div id="tour-body"></div></div>
+  <div class="tour-nav">
+    <div class="tour-dots" id="tour-dots" aria-hidden="true"></div>
+    <button type="button" class="btn" id="tour-back">Back</button>
+    <button type="button" class="btn primary" id="tour-next">Next</button>
+  </div>
+</div>
+<script src="chrome.js" defer></script>
+<script src="app.js" defer></script>
+</body>
+</html>

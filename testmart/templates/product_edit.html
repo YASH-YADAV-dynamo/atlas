@@ -1,0 +1,12 @@
+{% extends "base.html" %}
+{% block title %}Edit product{% endblock %}
+{% block heading %}Edit product {{ product.sku }}{% endblock %}
+{% block content %}
+{% if error %}<p class="alert" role="alert">{{ error }}</p>{% endif %}
+<p>{{ product.name }}</p>
+<form method="post" action="/products/{{ product.id }}/edit">
+  <label for="price">Price (USD)</label>
+  <input id="price" name="price" type="text" inputmode="decimal" value="{{ '%.2f' % (product.price_cents / 100) }}" required>
+  <p><button type="submit">Save price</button> <a href="/products">Cancel</a></p>
+</form>
+{% endblock %}

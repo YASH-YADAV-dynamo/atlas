@@ -1,0 +1,15 @@
+{% macro search_form(action, label, q) %}
+<form method="get" action="{{ action }}" role="search">
+  <label for="q">{{ label }}</label>
+  <input id="q" name="q" type="search" value="{{ q }}" maxlength="64">
+  <button type="submit">Search</button>
+</form>
+{% endmacro %}
+
+{% macro pagination(base, page, pages, q="") %}
+<nav aria-label="Pagination">
+  {% if page > 1 %}<a href="{{ base }}?page={{ page - 1 }}&amp;q={{ q|urlencode }}">Previous page</a>{% endif %}
+  <span>Page {{ page }} of {{ pages }}</span>
+  {% if page < pages %}<a href="{{ base }}?page={{ page + 1 }}&amp;q={{ q|urlencode }}">Next page</a>{% endif %}
+</nav>
+{% endmacro %}

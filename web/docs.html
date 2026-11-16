@@ -1,0 +1,204 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<meta name="theme-color" content="#06090c">
+<title>Atlas docs: MCP tools, Route API and SDK</title>
+<meta name="description" content="Atlas documentation: quickstart, concepts, MCP tools, the three-call Route API, the Python SDK, trace import and per-client connect instructions.">
+<link rel="icon" type="image/svg+xml" href="/favicon.svg">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600&amp;family=Instrument+Serif:ital@1&amp;family=JetBrains+Mono:wght@400;500;600&amp;display=swap">
+<link rel="stylesheet" href="base.css">
+<link rel="stylesheet" href="docs.css">
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="snav">
+  <nav class="wrap in" aria-label="Main">
+    <a class="brand" href="/" aria-label="Atlas home"><svg viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="8" fill="#0b1014" stroke="#27343d"/><path d="M9 23C9 14.5 23 17.5 23 9" fill="none" stroke="#5eead4" stroke-width="2.6" stroke-linecap="round"/><circle cx="9" cy="23" r="3.8" fill="#5eead4"/><circle cx="23" cy="9" r="3.4" fill="#0b1014" stroke="#f5b042" stroke-width="2.4"/></svg>Atlas</a>
+    <div class="links"><a href="/#how">How it works</a><a href="/app.html">Playground</a><a href="/docs.html" aria-current="page" class="keep">Docs</a><a href="#" class="gh">GitHub</a><button type="button" class="btn primary" data-connect>Connect your agent</button></div>
+  </nav>
+</header>
+<div class="wrap dl">
+<aside class="side" aria-label="Documentation">
+  <nav>
+    <a href="#quickstart">Quickstart</a>
+    <a href="#concepts">Concepts</a>
+    <a href="#mcp-tools">MCP tools</a>
+    <a href="#route-api">Route API</a>
+    <a href="#sdk">Python SDK</a>
+    <a href="#trace-import">Trace import</a>
+    <a href="#connect">Connect</a>
+    <a href="#keys">Keys and isolation</a>
+  </nav>
+</aside>
+<main id="main" class="doc">
+<h1>Atlas documentation</h1>
+<p class="lead">Atlas is an agent context layer for browser agents: a live context store in HydraDB holding the pages of a site, the actions between them, skills, resolved entities and change events. Your agent pulls what the task needs instead of preloading it.</p>
+
+<section id="quickstart">
+<h2>Quickstart</h2>
+<p>Hosted endpoint: <code>https://atlas.yashdynamo.fun/mcp</code> (MCP over streamable HTTP, bearer key on every request). Add it to your client, then run this loop inside your agent:</p>
+<ol>
+<li><code>atlas_find_skills</code> with the site and the goal, to see what the map already knows how to do.</li>
+<li><code>atlas_plan</code> with a summary of the current page. Execute the returned steps in your own browser.</li>
+<li>Where the plan says <code>needs_model</code>, let your model choose the next action, execute it, and call <code>atlas_report</code>.</li>
+<li>Next time, <code>atlas_plan</code> returns the whole route.</li>
+</ol>
+<div class="codeblock"><header><span>Example: Claude Code</span><button class="copy" type="button" data-copy="q1">Copy</button></header><pre><code id="q1">claude mcp add --transport http atlas https://atlas.yashdynamo.fun/mcp \
+  --header "Authorization: Bearer &lt;key&gt;"</code></pre></div>
+<p>Use <button type="button" class="linkbtn" data-connect>Connect your agent</button> for one-click setup and a key. Atlas never opens a browser in hosted mode: your agent drives its own Chromium or Playwright session.</p>
+</section>
+
+<section id="concepts">
+<h2>Concepts</h2>
+<dl class="defs">
+<dt>State</dt><dd>An abstract page: site, URL template, title and a signature of its interactive controls (not the page text). Every concrete page with the same signature is one state, so <code>/orders/1042</code> and <code>/orders/7</code> are the same node.</dd>
+<dt>Action</dt><dd>One state-changing step between states: <code>click</code>, <code>fill</code>, <code>select</code>, <code>check</code>, <code>press</code> or <code>goto</code>, located by role and accessible name. Values are stored as <code>{slot}</code> placeholders, so a route learned for one order serves any other. Edges carry success counts and timings; the planner minimises cost by reliability and speed.</dd>
+<dt>Skill</dt><dd>A route that proved itself repeatedly, compressed into one reusable hop. Found by goal with <code>atlas_find_skills</code>.</dd>
+<dt>Entity</dt><dd>A resolved thing such as <code>order_id 1042</code>, stored with the action where it was last seen. <code>atlas_recall</code> answers "where did I see this?" without searching again.</dd>
+<dt>Change event</dt><dd>When a learned action stops working, the failure is penalised, the plan routes around it and the event is recorded. Read recent changes through the <code>atlas://site/{site}/changes</code> resource or <code>GET /v1/changes?site=</code>.</dd>
+</dl>
+<p>A task is planned as one weighted shortest-path query over the graph in HydraDB. The model is asked only where the map ends (the frontier).</p>
+</section>
+
+<section id="mcp-tools">
+<h2>MCP tools</h2>
+<p>The hosted server runs in planner mode. Responses are compact JSON in a fixed token budget; long lists are cut and flagged <code>truncated</code>.</p>
+<table>
+<thead><tr><th scope="col">Tool</th><th scope="col">Call it when</th><th scope="col">Returns</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code>atlas_find_skills</code></th><td>Starting a task: what does the map already know how to do on this site? Input: <code>site</code>, <code>goal_text</code>.</td><td>Up to 5 skills with id, name, parameters and reliability.</td></tr>
+<tr><th scope="row"><code>atlas_plan</code></th><td>You know the current page and want the route to a goal. Input: <code>site</code>, <code>snapshot_summary</code>, <code>goal_text</code>, <code>params</code>.</td><td>The page's <code>state_id</code> and steps with the expected next state, or <code>needs_model</code> with a reason.</td></tr>
+<tr><th scope="row"><code>atlas_recall</code></th><td>You need where an entity was last seen. Input: <code>entity_type</code>, <code>key</code>.</td><td>Found, the page's state id and URL template.</td></tr>
+<tr><th scope="row"><code>atlas_report</code></th><td>After every step you executed, to teach the map. Input: <code>site</code>, <code>from_state</code>, <code>action</code>, <code>to_snapshot_summary</code>, <code>ok</code>, optional <code>event_id</code>, <code>goal_text</code>, <code>params</code>, <code>goal_reached</code>.</td><td>The new <code>state_id</code>, whether it was known. Safe to retry with the same <code>event_id</code>.</td></tr>
+</tbody></table>
+<p>Resources: <code>atlas://sites</code> (mapped sites and sizes) and <code>atlas://site/{site}/changes</code>. With the public demo key the tools are read-only: <code>atlas_report</code> returns a <code>read-only</code> error. Self-hosted stdio mode can also expose <code>atlas_run</code> and <code>atlas_act</code>, where Atlas drives a local browser itself.</p>
+</section>
+
+<section id="route-api">
+<h2>Route API</h2>
+<p>The same map over plain HTTP, authenticated with the same bearer key. Three calls:</p>
+<div class="codeblock"><header><span>locate, plan, report</span><button class="copy" type="button" data-copy="r1">Copy</button></header><pre><code id="r1"># 1. Where am I? Send a snapshot of the current page.
+POST /v1/locate  {"site": "shop", "snapshot": {"url": "...", "title": "...", "elements": [{"role": "link", "name": "Orders"}], "text": "..."}}
+# -> {"state_id": 12, "known": true}
+
+# 2. How do I get to the goal?
+POST /v1/plan    {"site": "shop", "state_id": 12, "goal_text": "Refund order 1042", "params": {"order_id": "1042"}}
+# -> {"route": [{"action": {...}, "expect_state": 14, "reliability": 0.97}], "needs_model": false, "reason": "route_found", ...}
+
+# 3. Teach the map what happened after each step you executed.
+POST /v1/report  {"site": "shop", "from_state": 12, "action": {...}, "to_snapshot": {...}, "ok": true, "ms": 180,
+                  "event_id": "run1-0", "goal_text": "Refund order 1042", "params": {"order_id": "1042"}, "goal_reached": false}
+# -> {"state_id": 14, "known": true, "duplicate": false}</code></pre></div>
+<p>Also: <code>GET /v1/map/{site}</code>, <code>GET /v1/changes?site=</code>, <code>GET /v1/skills?site=</code>, <code>GET /healthz</code>. Plan reasons: <code>route_found</code>, <code>unknown_goal</code>, <code>no_route_within_max_steps</code>, <code>missing_params</code>. Reports are idempotent on <code>event_id</code>.</p>
+</section>
+
+<section id="sdk">
+<h2>Python SDK</h2>
+<p>A thin client over the Route API. It depends on <code>httpx</code> only.</p>
+<div class="codeblock"><header><span>Python</span><button class="copy" type="button" data-copy="s1">Copy</button></header><pre><code id="s1">from atlas_sdk import Atlas
+
+atlas = Atlas("https://atlas.yashdynamo.fun", api_key, site="shop.example")
+summary = atlas.session(driver).run("Refund order 1042", {"order_id": "1042"}, fallback=my_agent_step)
+print(summary)  # RunSummary(success=True, steps=5, map_steps=5, fallback_calls=0)</code></pre></div>
+<ul>
+<li><code>driver</code> has <code>snapshot()</code> (url, title, elements as role/name dicts) and <code>act(action)</code>.</li>
+<li><code>fallback(snapshot, goal, params)</code> is your own agent step. It is called only where the map ends and returns one action, or <code>None</code> when the goal is done.</li>
+<li>Parameter values are replaced by <code>{slot}</code> placeholders before a step is reported. API errors raise <code>AtlasApiError(status, code, message)</code>.</li>
+</ul>
+</section>
+
+<section id="trace-import">
+<h2>Trace import</h2>
+<p>Seed a map from runs you already recorded, without re-exploring. A trace is JSON Lines: one step per line with <code>run_id</code>, <code>index</code>, <code>site</code>, <code>before</code> and <code>after</code> snapshots, the <code>action</code>, and optionally <code>ok</code>, <code>ms</code>, <code>goal_text</code>, <code>params</code> and <code>goal_reached</code>. Unknown fields are rejected, and the whole file is validated before anything is imported.</p>
+<div class="codeblock"><header><span>Shell</span><button class="copy" type="button" data-copy="t1">Copy</button></header><pre><code id="t1">ATLAS_API_URL=https://atlas.yashdynamo.fun ATLAS_API_KEY=your-key \
+python -m atlas.import_trace runs.jsonl
+# {"steps":5,"runs":1,"new_states":6,"duplicates":0,"failed_steps":0,"goals_linked":1}</code></pre></div>
+<p>Re-importing the same file counts every step as a duplicate. <code>TraceRecorder</code> wraps any driver to record runs as you go. Never record real credentials: use templated actions (a password field filled with <code>{password}</code>).</p>
+</section>
+
+<section id="connect">
+<h2>Connect</h2>
+<p>Atlas speaks MCP over one transport, streamable HTTP, and your client reaches it in one of two ways. Replace <code>&lt;key&gt;</code> with the demo key from <code>GET /v1/mcp-info</code> or a private key from <code>POST /v1/keys</code>. <button type="button" class="linkbtn" data-connect>Open the connect dialog</button> to fill these in with your key.</p>
+<h3>Remote (HTTP)</h3>
+<p>The client connects directly to the hosted URL and sends the key in an <code>Authorization</code> header. Use it whenever your client supports remote MCP servers with headers. Nothing to install.</p>
+<div class="codeblock"><pre><code>{
+  "mcpServers": {
+    "atlas": {
+      "type": "http",
+      "url": "https://atlas.yashdynamo.fun/mcp",
+      "headers": { "Authorization": "Bearer &lt;key&gt;" }
+    }
+  }
+}</code></pre></div>
+<p>Some clients name the transport field differently or leave it out; the URL and the header are what matter.</p>
+<p><strong>No header support?</strong> Some clients take only a URL. Put the key in the path:</p>
+<div class="codeblock"><pre><code>https://atlas.yashdynamo.fun/mcp/k/&lt;key&gt;</code></pre></div>
+<p>It is the same endpoint with the same key, map, limits and read-only rule for the demo key. <strong>Treat that URL like a password</strong>: anyone who has it can use your key. Atlas masks the key in its own access log, and a wrong key gets <code>401</code> without being echoed.</p>
+<h3>Local (stdio)</h3>
+<p>The client launches a command and talks to it over stdin and stdout. For hosted Atlas the command is the standard <code>mcp-remote</code> bridge, which forwards stdio to the hosted URL (it needs Node.js):</p>
+<div class="codeblock"><pre><code>{
+  "mcpServers": {
+    "atlas": {
+      "command": "npx",
+      "args": ["-y", "mcp-remote", "https://atlas.yashdynamo.fun/mcp",
+               "--header", "Authorization: Bearer &lt;key&gt;"]
+    }
+  }
+}</code></pre></div>
+<p>The same command by hand, or through the key-in-path URL if passing a header is awkward:</p>
+<div class="codeblock"><pre><code>npx -y mcp-remote https://atlas.yashdynamo.fun/mcp --header "Authorization: Bearer &lt;key&gt;"
+npx -y mcp-remote https://atlas.yashdynamo.fun/mcp/k/&lt;key&gt;</code></pre></div>
+<p>A self-hosted Atlas can instead run its own stdio server, <code>python -m atlas.mcp</code>, which can also drive a local browser (see Self-hosting in the MCP guide).</p>
+<h3>Open in your editor</h3>
+<p>Cursor and VS Code register install links, so the connect dialog offers one-click buttons that add the server for you after a review prompt.</p>
+<h3>Examples</h3>
+<div class="codeblock"><header><span>Claude Code</span></header><pre><code>claude mcp add --transport http atlas https://atlas.yashdynamo.fun/mcp \
+  --header "Authorization: Bearer &lt;key&gt;"</code></pre></div>
+<div class="codeblock"><header><span>Claude.ai, Claude Desktop, ChatGPT (custom connector, no authentication)</span></header><pre><code>https://atlas.yashdynamo.fun/mcp/k/&lt;key&gt;</code></pre></div>
+<div class="codeblock"><header><span>Codex</span></header><pre><code>codex mcp add atlas --url https://atlas.yashdynamo.fun/mcp/k/&lt;key&gt;</code></pre></div>
+<div class="codeblock"><header><span>Check from a terminal</span></header><pre><code>curl -si https://atlas.yashdynamo.fun/mcp \
+  -H "Authorization: Bearer &lt;key&gt;" -H "Content-Type: application/json" \
+  -H "Accept: application/json, text/event-stream" \
+  -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"curl","version":"0"}}}'</code></pre></div>
+<p>The response carries an <code>mcp-session-id</code> header. Send it on the following requests. A session belongs to the key that created it. The legacy SSE transport is not offered.</p>
+</section>
+
+<section id="keys">
+<h2>Keys and isolation</h2>
+<table>
+<thead><tr><th scope="col">Key</th><th scope="col">From</th><th scope="col">Map</th><th scope="col">Writes</th></tr></thead>
+<tbody>
+<tr><th scope="row">Demo key</th><td><code>GET /v1/mcp-info</code></td><td>shared, pre-mapped</td><td>no</td></tr>
+<tr><th scope="row">Private key</th><td><code>POST /v1/keys</code></td><td>your own, empty at first</td><td>yes</td></tr>
+</tbody></table>
+<p>A private key gets its own namespace: nothing you report is visible to other keys. The key is shown once; Atlas stores only a keyed hash, so a lost key cannot be recovered. The same key works for the REST and MCP views of your map. Limits apply to key creation, request rate and stored steps per key (over the rate limit you get <code>429</code>).</p>
+</section>
+</main>
+</div>
+<div class="wrap"><footer class="site">
+  <div><a class="brand" href="/"><svg viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="8" fill="#0b1014" stroke="#27343d"/><path d="M9 23C9 14.5 23 17.5 23 9" fill="none" stroke="#5eead4" stroke-width="2.6" stroke-linecap="round"/><circle cx="9" cy="23" r="3.8" fill="#5eead4"/><circle cx="23" cy="9" r="3.4" fill="#0b1014" stroke="#f5b042" stroke-width="2.4"/></svg>Atlas</a>
+  <p>Made by Yash &middot; <a href="https://x.com/yashastro23" target="_blank" rel="noopener noreferrer">X @yashastro23</a></p>
+  <p>Built on the open-source HydraDB engine.</p></div>
+  <div class="fl"><a href="/docs.html">Docs</a><a href="/app.html">Playground</a><a href="/llms.txt">llms.txt</a><a href="#">GitHub</a></div>
+</footer></div>
+<script src="chrome.js" defer></script>
+<script>
+(function () {
+  var links = Array.prototype.slice.call(document.querySelectorAll(".side a"));
+  var secs = links.map(function (a) { return document.querySelector(a.getAttribute("href")); });
+  function mark() {
+    var cur = 0;
+    secs.forEach(function (s, i) { if (s && s.getBoundingClientRect().top < 140) cur = i; });
+    links.forEach(function (a, i) { if (i === cur) a.setAttribute("aria-current", "true"); else a.removeAttribute("aria-current"); });
+  }
+  window.addEventListener("scroll", mark, { passive: true });
+  mark();
+})();
+</script>
+</body>
+</html>

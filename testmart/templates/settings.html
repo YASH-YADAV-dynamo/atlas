@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% block title %}Settings{% endblock %}
+{% block heading %}Settings{% endblock %}
+{% block content %}
+<nav class="tabs" aria-label="Settings tabs">
+  <a href="/settings/general"{% if tab == "general" %} aria-current="page"{% endif %}>General</a>
+  <a href="/settings/notifications"{% if tab == "notifications" %} aria-current="page"{% endif %}>Notifications</a>
+</nav>
+<form method="post" action="/settings/{{ tab }}">
+  {% for key, label, enabled in fields %}
+  <p><input id="{{ key }}" name="{{ key }}" type="checkbox"{% if enabled %} checked{% endif %}>
+     <label for="{{ key }}" style="display:inline">{{ label }}</label></p>
+  {% endfor %}
+  <button type="submit">Save settings</button>
+</form>
+{% endblock %}

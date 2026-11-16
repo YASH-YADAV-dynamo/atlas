@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% from "_macros.html" import search_form, pagination %}
+{% block title %}Customers{% endblock %}
+{% block heading %}Customers{% endblock %}
+{% block content %}
+{{ search_form("/customers", "Search customers", q) }}
+<table>
+  <thead><tr><th>Name</th><th>Email</th><th>Details</th></tr></thead>
+  <tbody>
+  {% for c in rows %}
+  <tr><td>{{ c.name }}</td><td>{{ c.email }}</td><td><a href="/customers/{{ c.id }}">View customer</a></td></tr>
+  {% else %}
+  <tr><td colspan="3">No customers found.</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+{{ pagination("/customers", page, pages, q) }}
+{% endblock %}

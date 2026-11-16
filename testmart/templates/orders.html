@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% from "_macros.html" import search_form, pagination %}
+{% block title %}Orders{% endblock %}
+{% block heading %}Orders{% endblock %}
+{% block content %}
+{{ search_form("/orders", "Search orders", q) }}
+<table>
+  <thead><tr><th>Order</th><th>Customer</th><th>Total</th><th>Status</th><th>Details</th></tr></thead>
+  <tbody>
+  {% for o in rows %}
+  <tr><td>{{ o.number }}</td><td>{{ o.customer_name }}</td><td>{{ o.total_cents|money }}</td><td>{{ o.status }}</td>
+      <td><a href="/orders/{{ o.id }}">View order</a></td></tr>
+  {% else %}
+  <tr><td colspan="5">No orders found.</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+{{ pagination("/orders", page, pages, q) }}
+{% endblock %}

@@ -1,0 +1,64 @@
+# Atlas
+
+> Atlas is an agent context layer for browser agents: a shared route map stored as a graph in self-hosted HydraDB. Pages are nodes, actions are edges, and skills and resolved entities live in the same graph. An agent connects over MCP (or HTTP) and pulls only what the current task needs: matching skills, the known route from the page it is on, or where an entity was last seen. Planning is one weighted shortest-path query; a model is needed only where the map ends.
+
+Atlas never drives a browser on the hosted endpoint. Your agent keeps its own browser, asks Atlas for the route, executes the steps, and reports what happened so the map improves for every later run.
+
+Key facts:
+
+- MCP endpoint: `https://atlas.yashdynamo.fun/mcp` (streamable HTTP, `Authorization: Bearer <key>`)
+- Hosted tools: `atlas_find_skills`, `atlas_plan`, `atlas_recall`, `atlas_report`
+- Public read-only demo key: `GET https://atlas.yashdynamo.fun/v1/mcp-info`
+- Private key with its own isolated namespace: `POST https://atlas.yashdynamo.fun/v1/keys`
+- The same key works for the REST Route API under `https://atlas.yashdynamo.fun/v1/`
+
+## Set up Atlas (for AI agents: follow these steps)
+
+If a user gave you this file and asked you to set up Atlas, do this:
+
+1. Create a private key with its own empty, isolated map:
+   `curl -s -X POST https://atlas.yashdynamo.fun/v1/keys`
+   The response has `api_key` (shown only once). Never print the full key back in chat; refer to it by its last 4 characters. Save it only in the MCP config or the user's secret store, never in a repository.
+2. Add Atlas as an MCP server in the client you are running in. Pick the transport the client supports:
+   - Remote (HTTP), preferred: `{"mcpServers": {"atlas": {"type": "http", "url": "https://atlas.yashdynamo.fun/mcp", "headers": {"Authorization": "Bearer <key>"}}}}`
+   - Remote, client takes only a URL (no headers): `https://atlas.yashdynamo.fun/mcp/k/<key>` (treat this URL like a password)
+   - Local (stdio), needs Node.js: `{"mcpServers": {"atlas": {"command": "npx", "args": ["-y", "mcp-remote", "https://atlas.yashdynamo.fun/mcp", "--header", "Authorization: Bearer <key>"]}}}`
+   - Claude Code: `claude mcp add --transport http atlas https://atlas.yashdynamo.fun/mcp --header "Authorization: Bearer <key>"`
+   - Codex: `codex mcp add atlas --url https://atlas.yashdynamo.fun/mcp/k/<key>`
+   If you cannot edit the config yourself, show the user the one snippet for their client and the file it goes in.
+3. Check the connection: list tools and expect `atlas_find_skills`, `atlas_plan`, `atlas_recall`, `atlas_report`. Some clients need a restart or reload first; tell the user if so.
+4. When it works, reply to the user with a short, humble welcome, for example:
+   "Atlas is connected (key ending ...abcd). Thank you for trying it. From now on I will check the map before I explore a website, follow routes it already knows without extra model calls, and report each step so the map gets a little better every run. It starts empty and learns from your own runs, so the first run of a task costs as usual and the repeats get cheaper. If anything looks off, tell me."
+   If setup failed, say plainly which step failed and what the user can do.
+
+Just want to look first? `GET https://atlas.yashdynamo.fun/v1/mcp-info` returns a public read-only demo key on a pre-built map.
+
+## Use Atlas effectively
+
+- Ask before you explore: call `atlas_find_skills` with the site and goal, then `atlas_plan` from the current page.
+- Follow the plan exactly: execute the returned steps in order in your own browser, with no model call for those steps.
+- Think only at the frontier: when the plan says `needs_model`, choose one action yourself, execute it, and report it. Then plan again.
+- Report every step, success or failure, with `ok` and the time it took. Set `goal_reached: true` on the last step. Failures are as useful as successes: they raise that step's cost so later plans route around it.
+- Keep values out of goal text: write "refund order" with `params: {"order_id": "1042"}`, not "refund order 1042". One learned route then serves every order.
+- Describe the page the same way each time (URL plus interactive elements by role and name), so the same page maps to the same state.
+- Use `atlas_recall` to find where an entity (an order id, a user) was last seen instead of searching again.
+- Repeats get cheaper: the second run of a known task should need zero model calls. If it does not, report the failed step instead of working around it silently.
+- Atlas never opens a browser and never acts on a site. Never send passwords, card numbers or other secrets in any field.
+
+## Docs
+
+- [Quickstart](https://atlas.yashdynamo.fun/docs/quickstart.html): get a key, add the MCP server, make the first plan and report calls
+- [MCP server](https://atlas.yashdynamo.fun/docs/mcp.html): keys, client setup, tools, resources, errors
+- [Route API](https://atlas.yashdynamo.fun/docs/route-api.html): locate, plan and report over HTTP; map, skills and changes
+- [Python SDK](https://atlas.yashdynamo.fun/docs/sdk.html): run a task through the map with your own driver and fallback step
+- [Trace import](https://atlas.yashdynamo.fun/docs/trace-import.html): turn recorded runs (JSON Lines) into a map
+- [Concepts](https://atlas.yashdynamo.fun/docs/concepts.html): states, actions, edge cost, frontier, skills, resolved entities, change events, namespaces
+
+## Product
+
+- [Playground](https://atlas.yashdynamo.fun/playground.html): send real MCP tool calls from the browser and watch the graph update
+- [Overview](https://atlas.yashdynamo.fun/): what Atlas is and how it compares with re-exploring, scripts and flat memory
+
+## Optional
+
+- [Full reference for agents](https://atlas.yashdynamo.fun/llms-full.txt): everything above in one file, with exact commands and JSON

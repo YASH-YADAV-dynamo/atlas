@@ -1,0 +1,450 @@
+# Atlas
+
+> Atlas is an agent context layer for browser agents: a shared route map stored as a graph in self-hosted HydraDB. Pages are nodes, actions are edges, and skills and resolved entities live in the same graph. An agent connects over MCP (or HTTP) and pulls only what the current task needs. Planning is one weighted shortest-path query; a model is needed only where the map ends.
+
+This file is the complete setup and usage reference, written for an LLM or agent reader.
+Host: `https://atlas.yashdynamo.fun`. MCP endpoint: `https://atlas.yashdynamo.fun/mcp`.
+
+## What Atlas is
+
+Browser agents usually work a site out from scratch on every run: read the page, ask a model what to
+click, repeat. A fleet of browser instances pays for the same decisions again and again.
+
+Atlas is the layer underneath that remembers. It is a live context store: a graph of the sites your
+agents work on, kept in HydraDB.
+
+- A page becomes a **state** (node).
+- A click, fill or other step becomes an **action** between two states (an action node between two edges).
+- A **goal** is linked to the action that completes it.
+- A route that keeps succeeding is compressed into a **skill**: one hop in the graph.
+- Things found along the way (an order id, a user) are stored as **resolved entities**.
+- A step that stops working is recorded as a **change event**.
+
+Your agent keeps its own browser and its own model. Atlas plans and learns. On the hosted endpoint it
+never opens a browser and never acts on a site.
+
+## Why it is different
+
+- **Versus re-exploring every run.** A known task is answered by one weighted shortest-path query over
+  the graph. The model is asked only where the map ends (`needs_model`).
+- **Versus preloading context.** Nothing about a site is loaded into the context window ahead of time:
+  no site notes, no transcript of past runs, no tool or MCP definitions per site or per flow. The agent
+  keeps four small tools and traverses the graph to pull only what the task needs. Every response is
+  compact JSON under a fixed size limit, so the cost in context tokens stays bounded however large the
+  map grows.
+- **Versus flat memory or vector notes.** Similar-looking text does not say what to click next. Atlas
+  stores the structure: which action leads from which page to which page, how often it worked and how
+  long it took. Route segments learned by different tasks join at the pages they share, so a new task
+  can be planned from pieces other runs discovered.
+- **Versus hardcoded scripts.** A script breaks when a control moves. In Atlas a failed step raises that
+  edge's cost, the next plan routes around it, and if there is no other road the model is asked at that
+  one spot and the new step is learned. The change is recorded.
+
+## Set up Atlas (for AI agents: follow these steps)
+
+If a user gave you this file and asked you to set up Atlas, do this:
+
+1. Create a private key with its own empty, isolated map:
+   `curl -s -X POST https://atlas.yashdynamo.fun/v1/keys`
+   The response has `api_key` (shown only once). Never print the full key back in chat; refer to it by its last 4 characters. Save it only in the MCP config or the user's secret store, never in a repository.
+2. Add Atlas as an MCP server in the client you are running in. Pick the transport the client supports:
+   - Remote (HTTP), preferred: `{"mcpServers": {"atlas": {"type": "http", "url": "https://atlas.yashdynamo.fun/mcp", "headers": {"Authorization": "Bearer <key>"}}}}`
+   - Remote, client takes only a URL (no headers): `https://atlas.yashdynamo.fun/mcp/k/<key>` (treat this URL like a password)
+   - Local (stdio), needs Node.js: `{"mcpServers": {"atlas": {"command": "npx", "args": ["-y", "mcp-remote", "https://atlas.yashdynamo.fun/mcp", "--header", "Authorization: Bearer <key>"]}}}`
+   - Claude Code: `claude mcp add --transport http atlas https://atlas.yashdynamo.fun/mcp --header "Authorization: Bearer <key>"`
+   - Codex: `codex mcp add atlas --url https://atlas.yashdynamo.fun/mcp/k/<key>`
+   If you cannot edit the config yourself, show the user the one snippet for their client and the file it goes in.
+3. Check the connection: list tools and expect `atlas_find_skills`, `atlas_plan`, `atlas_recall`, `atlas_report`. Some clients need a restart or reload first; tell the user if so.
+4. When it works, reply to the user with a short, humble welcome, for example:
+   "Atlas is connected (key ending ...abcd). Thank you for trying it. From now on I will check the map before I explore a website, follow routes it already knows without extra model calls, and report each step so the map gets a little better every run. It starts empty and learns from your own runs, so the first run of a task costs as usual and the repeats get cheaper. If anything looks off, tell me."
+   If setup failed, say plainly which step failed and what the user can do.
+
+Just want to look first? `GET https://atlas.yashdynamo.fun/v1/mcp-info` returns a public read-only demo key on a pre-built map.
+
+## Use Atlas effectively
+
+- Ask before you explore: call `atlas_find_skills` with the site and goal, then `atlas_plan` from the current page.
+- Follow the plan exactly: execute the returned steps in order in your own browser, with no model call for those steps.
+- Think only at the frontier: when the plan says `needs_model`, choose one action yourself, execute it, and report it. Then plan again.
+- Report every step, success or failure, with `ok` and the time it took. Set `goal_reached: true` on the last step. Failures are as useful as successes: they raise that step's cost so later plans route around it.
+- Keep values out of goal text: write "refund order" with `params: {"order_id": "1042"}`, not "refund order 1042". One learned route then serves every order.
+- Describe the page the same way each time (URL plus interactive elements by role and name), so the same page maps to the same state.
+- Use `atlas_recall` to find where an entity (an order id, a user) was last seen instead of searching again.
+- Repeats get cheaper: the second run of a known task should need zero model calls. If it does not, report the failed step instead of working around it silently.
+- Atlas never opens a browser and never acts on a site. Never send passwords, card numbers or other secrets in any field.
+
+## Connect over MCP in 60 seconds
+
+### 1. Get a key
+
+Public connection info, including the read-only demo key:
+
+```bash
+curl -s https://atlas.yashdynamo.fun/v1/mcp-info
+```
+
+```json
+{"mcp_url": "https://atlas.yashdynamo.fun/mcp", "demo_key": "...", "tools": ["atlas_find_skills", "atlas_recall", "atlas_plan", "atlas_report"]}
+```
+
+Create a private key (your own empty, isolated map):
+
+```bash
+curl -s -X POST https://atlas.yashdynamo.fun/v1/keys
+```
+
+```json
+{"api_key": "atl_...", "namespace": "t_3f9c...", "mcp_url": "https://atlas.yashdynamo.fun/mcp", "read_only": false}
+```
+
+The private key is returned once. Only a keyed hash is stored, so a lost key cannot be recovered;
+create a new one.
+
+### 2. Add the server
+
+Atlas is one MCP server over streamable HTTP. A client reaches it over one of two transports.
+
+Remote (HTTP): the client connects to the hosted URL and sends the key in an Authorization header. Use this whenever the client supports remote MCP servers with headers.
+
+```json
+{
+  "mcpServers": {
+    "atlas": {
+      "type": "http",
+      "url": "https://atlas.yashdynamo.fun/mcp",
+      "headers": { "Authorization": "Bearer <key>" }
+    }
+  }
+}
+```
+
+No header support? Clients that take only a URL can put the key in the path: `https://atlas.yashdynamo.fun/mcp/k/<key>` behaves exactly like `/mcp` with the bearer header: same private map, same limits. Treat that URL like a password. The legacy SSE transport is not offered.
+
+Local (stdio): the client launches a command and talks to it over stdio. For hosted Atlas the command is the standard `mcp-remote` bridge (needs Node.js), which forwards to the hosted URL:
+
+```json
+{
+  "mcpServers": {
+    "atlas": {
+      "command": "npx",
+      "args": ["-y", "mcp-remote", "https://atlas.yashdynamo.fun/mcp",
+               "--header", "Authorization: Bearer <key>"]
+    }
+  }
+}
+```
+
+The same by hand: `npx -y mcp-remote https://atlas.yashdynamo.fun/mcp --header "Authorization: Bearer <key>"`, or through the key-in-path URL: `npx -y mcp-remote https://atlas.yashdynamo.fun/mcp/k/<key>`. A self-hosted Atlas can instead run its own stdio server, `python -m atlas.mcp`.
+
+Editors: Cursor and VS Code register install links, so the connect dialog on the site offers one-click "Open in your editor" buttons.
+
+Examples (the same two transports, as client commands):
+
+```bash
+# Claude Code
+claude mcp add --transport http atlas https://atlas.yashdynamo.fun/mcp \
+  --header "Authorization: Bearer <key>"
+# Codex
+codex mcp add atlas --url https://atlas.yashdynamo.fun/mcp/k/<key>
+```
+
+Claude.ai, Claude Desktop and ChatGPT custom connectors: paste `https://atlas.yashdynamo.fun/mcp/k/<key>` with authentication set to none.
+
+Plain HTTP (JSON-RPC over streamable HTTP):
+
+```bash
+curl -si https://atlas.yashdynamo.fun/mcp \
+  -H "Authorization: Bearer <key>" \
+  -H "Content-Type: application/json" \
+  -H "Accept: application/json, text/event-stream" \
+  -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"curl","version":"0"}}}'
+```
+
+The response carries an `mcp-session-id` header. Send it on the following requests
+(`notifications/initialized`, then `tools/list`, `tools/call`). A session belongs to the key that
+created it; the same session id with another key is answered `404`.
+
+### 3. Use it in the agent loop
+
+1. `atlas_find_skills` with the goal, to see what the map already knows.
+2. `atlas_plan` with a summary of the current page. Execute the returned steps in your browser, in order.
+3. Where the plan says `needs_model`, let your model choose the next action, execute it, and call
+   `atlas_report` with the step and the page it led to. Set `goal_reached: true` on the last step.
+4. On the next run, `atlas_plan` returns the whole route.
+
+Suggested instruction for an agent:
+
+> Before acting on a website, call atlas_find_skills with the goal, then atlas_plan with a summary of
+> the current page. Execute the returned steps in order. Where the plan says needs_model, choose the
+> next action yourself, execute it, and call atlas_report with the step and the page it led to. Set
+> goal_reached on the final step.
+
+## Tools (hosted endpoint)
+
+All tool results are a single compact JSON text. Nulls and default values are omitted. Long lists are
+cut and flagged `"truncated": true`. The `tools/list` response is the source of truth for schemas.
+
+### atlas_find_skills
+
+When to call: first, at the start of a task, to learn whether the map already knows how to do it.
+
+Arguments: `site` (string), `goal_text` (string).
+
+```json
+{"name": "atlas_find_skills", "arguments": {"site": "shop.example", "goal_text": "refund an order"}}
+```
+
+Returns up to 5 matches: `skills[]` with `skill_id`, `name` (the goal text, with `{slot}`
+placeholders), `params` (the slots you must supply) and `reliability` (between 0 and 1). An empty list
+means nothing matching has been learned on that site yet.
+
+### atlas_plan
+
+When to call: whenever your agent is on a page and needs the next steps towards a goal. Call it again
+after a step lands somewhere unexpected.
+
+Arguments: `site`, `snapshot_summary` (the current page), `goal_text`, `params` (object of strings,
+optional).
+
+```json
+{"name": "atlas_plan", "arguments": {
+  "site": "shop.example",
+  "goal_text": "Refund order {order_id}",
+  "params": {"order_id": "1042"},
+  "snapshot_summary": {
+    "url": "https://shop.example/",
+    "title": "Home",
+    "elements": [{"role": "link", "name": "Orders"}, {"role": "link", "name": "Account"}]
+  }
+}}
+```
+
+Returns `state_id` (the id of the page you are on), `route[]` (each step has `action`, `expect` = the
+state id the step should lead to, and `reliability`), `needs_model` and `reason`
+(`route_found`, `unknown_goal`, `no_route_within_max_steps` or `missing_params`).
+If `needs_model` is true the map has no route from here: let your model pick the next action.
+
+### atlas_recall
+
+When to call: when the task mentions a specific thing (an order, a user, a ticket) and you want to know
+whether a previous run already found it.
+
+Arguments: `entity_type` (lowercase slot name, for example `order_id`), `key` (its value).
+
+```json
+{"name": "atlas_recall", "arguments": {"entity_type": "order_id", "key": "1042"}}
+```
+
+Returns `found`, and when found: `state_id` and `page` (the URL template of the page where it was last
+seen).
+
+### atlas_report
+
+When to call: after every step your agent executes, whether it came from a plan or from your model.
+Reporting is how the map learns and how broken steps are detected. Requires a private key.
+
+Arguments: `site`, `from_state` (the `state_id` before the action), `action`,
+`to_snapshot_summary` (the page after the action), `ok` (the action executed), and optionally `ms`
+(duration), `event_id` (8 to 80 characters; reuse it to retry safely), `expect_state` (the `expect`
+value when the step came from a plan), `goal_text`, `params`, `goal_reached` (true on the last step of
+the task), `run_id` (the same value for every step of one run; lets repeated routes become skills).
+
+```json
+{"name": "atlas_report", "arguments": {
+  "site": "shop.example",
+  "from_state": 4821,
+  "action": {"kind": "click", "locator": {"role": "link", "name": "Orders"}},
+  "to_snapshot_summary": {"url": "https://shop.example/orders", "title": "Orders",
+                          "elements": [{"role": "link", "name": "View order", "in_list": true}]},
+  "ok": true,
+  "ms": 120,
+  "goal_text": "Refund order {order_id}",
+  "params": {"order_id": "1042"},
+  "run_id": "agent-run-0001"
+}}
+```
+
+Returns `state_id` (the page you landed on), `known` (whether the map had that page), `duplicate` and
+`event_id`. Parameter values are replaced by `{slot}` placeholders before storing, so the route learned
+for one order serves any other.
+
+### Shapes used by the tools
+
+- Snapshot: `{"url": string, "title": string, "elements": [{"role": string, "name": string, "in_list": bool}], "text": string}`.
+  Up to 400 elements. `in_list: true` marks controls inside repeated rows (their names are data).
+  `text` is optional and never part of the page signature.
+- Action: `{"kind": "click" | "fill" | "select" | "check" | "press" | "goto", "locator": {"role", "name", "row"?}, "param"?: slot, "value"?: string, "fills"?: [...]}`.
+  `goto` takes a `value` (a path) and no locator; every other kind needs a locator. Use `param` to name
+  the task slot that supplies a value, or `value` for a literal, never both. `row` narrows a locator to
+  the table row or list item containing that text.
+
+### Resources
+
+- `atlas://sites`: the sites mapped under your key, with state and transition counts.
+- `atlas://site/{site}/changes`: recent flow changes on a site (control name, page, first seen,
+  whether a replacement is known).
+
+### Local runner mode (self-hosted only)
+
+Run over stdio with `python -m atlas.mcp`, Atlas can also own a local browser. That mode adds
+`atlas_run` (do a task; drives every known step in one call and returns `done` or `needs_choice`) and
+`atlas_act` (choose one offered control, or set `goal_reached`). These two tools are not on the hosted
+endpoint.
+
+## Route API in 3 calls
+
+The same map over HTTP, with the same key: `Authorization: Bearer <key>`.
+
+1. Locate: turn the current page into a state.
+
+```bash
+curl -s https://atlas.yashdynamo.fun/v1/locate -H "Authorization: Bearer <key>" -H "Content-Type: application/json" \
+  -d '{"site":"shop.example","snapshot":{"url":"https://shop.example/","title":"Home","elements":[{"role":"link","name":"Orders"}]}}'
+```
+
+Returns `{"state_id": 4821, "known": true}`.
+
+2. Plan: ask for the route from that state to a goal.
+
+```bash
+curl -s https://atlas.yashdynamo.fun/v1/plan -H "Authorization: Bearer <key>" -H "Content-Type: application/json" \
+  -d '{"site":"shop.example","state_id":4821,"goal_text":"Refund order {order_id}","params":{"order_id":"1042"}}'
+```
+
+Returns `route[]` (each step: `action`, `expect_state`, `reliability`, `last_verified`), `confidence`,
+`needs_model`, `reason`, `max_steps_used`.
+
+3. Report: tell Atlas what happened after each executed step (private key).
+
+```bash
+curl -s https://atlas.yashdynamo.fun/v1/report -H "Authorization: Bearer <key>" -H "Content-Type: application/json" \
+  -d '{"site":"shop.example","from_state":4821,"action":{"kind":"click","locator":{"role":"link","name":"Orders"}},"to_snapshot":{"url":"https://shop.example/orders","title":"Orders","elements":[]},"ok":true,"ms":120,"event_id":"run0001-step-0"}'
+```
+
+Returns `{"state_id": ..., "known": ..., "duplicate": false}`. `event_id` is required here and makes
+the call idempotent.
+
+Other endpoints:
+
+| Method and path | Purpose |
+|---|---|
+| `GET /v1/map/{site}` | The whole map of a site: `states[]` and `transitions[]` with counts, timing and cost |
+| `GET /v1/skills?site=` | Compressed skills and the log of when they were created or removed |
+| `GET /v1/changes?site=` | Change events: steps that stopped working and their replacements |
+| `POST /v1/sleep?site=` | Run the compression pass now (private key) |
+| `GET /v1/mcp-info` | Public: MCP URL, demo key, tool names |
+| `POST /v1/keys` | Public: create a private key |
+| `GET /healthz` | Health check |
+
+Errors are JSON `{"code": "...", "message": "..."}`. Notable codes: `read_only_key` (403, the demo key
+tried to write), `rate_limited` (429), `tenant_limit` (429), `keys_disabled` (503).
+
+## Python SDK
+
+A thin client for the Route API (depends on `httpx` only). Install it from the `sdk/` directory of the
+repository.
+
+```python
+from atlas_sdk import Atlas
+
+atlas = Atlas("https://atlas.yashdynamo.fun", api_key, site="shop.example")
+summary = atlas.session(driver).run(
+    "Refund order {order_id}", {"order_id": "1042"}, fallback=my_agent_step
+)
+print(summary)  # RunSummary(success=..., steps=..., map_steps=..., fallback_calls=...)
+```
+
+- `driver` has `snapshot() -> dict` (url, title, elements as role/name dicts) and `act(action: dict)`.
+- `fallback(snapshot, goal, params) -> dict | None` is your own agent step. It is called only where the
+  map ends and returns one action, or `None` when the goal is done.
+- Parameter values are replaced by `{slot}` placeholders before a step is reported.
+- API errors raise `AtlasApiError(status, code, message)`.
+
+## Trace import
+
+If you already have recorded runs, import them instead of re-exploring. A trace is a JSON Lines file,
+one step per line:
+
+```json
+{"run_id":"agent-run-0001","index":0,"site":"shop","before":{"url":"https://shop.example/","title":"Home","elements":[{"role":"link","name":"Orders"}],"text":"Home"},"action":{"kind":"click","locator":{"role":"link","name":"Orders"}},"after":{"url":"https://shop.example/orders","title":"Orders","elements":[],"text":"Orders"},"ok":true,"ms":120,"goal_text":"Refund order 1042","params":{"order_id":"1042"},"goal_reached":false}
+```
+
+Fields: `run_id`, `index` (0 to 9999; with `run_id` it makes the import idempotent), `site`, `before`
+and `after` (snapshots), `action`, `ok` (default true), `ms`, `goal_text`, `params` (values are
+replaced by `{slot}` placeholders), `goal_reached` (on a run's last step). Unknown fields are rejected.
+
+```bash
+ATLAS_API_URL=https://atlas.yashdynamo.fun ATLAS_API_KEY=<key> python -m atlas.import_trace runs.jsonl
+```
+
+The whole file is validated first; a bad line imports nothing. Re-importing the same file counts every
+step as a duplicate. To record traces from any agent, wrap its browser driver with
+`atlas.import_trace.TraceRecorder`. Never put real credentials in a trace; use templated actions for
+logins (for example a password field filled with `{password}`).
+
+## Keys, namespaces and isolation
+
+| Key | Source | Namespace | Can write |
+|---|---|---|---|
+| Demo key | `GET /v1/mcp-info` (`demo_key`) | the shared, already mapped demo map | no |
+| Private key | `POST /v1/keys` | its own empty map | yes |
+
+- Every request needs `Authorization: Bearer <key>`.
+- A private key has its own namespace in HydraDB. Nothing it reports is visible to any other key, and
+  nothing from other keys is visible to it.
+- The demo key is read-only: `atlas_report` and every other write are refused, and planning from an
+  unknown page records nothing.
+- One key is one identity across MCP and the REST Route API, so both see the same map.
+- Requests are rate-limited per key; new keys are limited per client address per day; a private key
+  has a cap on stored steps. Over a limit, calls return `429` or a `limit` error.
+
+What is stored per key, and nothing more:
+
+- pages as abstract states: site, URL template, title and a signature of the page's controls (not the
+  page text);
+- actions between pages, with `{slot}` placeholders instead of parameter values, and their success
+  counts and timings;
+- goals (templated text) linked to the actions that complete them, and skills compressed from repeated
+  routes;
+- resolved entities: type, key and the action where they were last seen;
+- ids of reported events (for idempotent retries) and detected changes.
+
+## Concepts
+
+- **State.** A page, abstracted: URL template plus a signature of its controls. Row data and page text
+  are not part of the signature, so two different orders share one "order detail" state.
+- **Action (transition).** One step from a state to a state: kind, control, and counters (`ok`, `fail`,
+  mean `ms`). Stored as an action node between two edges, so it can carry properties and be linked to
+  goals, entities and skills.
+- **Edge cost.** `-ln((ok + 1) / (ok + fail + 2)) + ms / 10000`. Reliable, fast steps are cheap.
+  Planning is a weighted shortest-path query over these costs in HydraDB.
+- **Frontier.** The edge of the map. When no route exists from the current state, the plan returns
+  `needs_model` and the agent's model chooses the next action. That step, once reported, extends the map.
+- **Goal.** Task text with `{slot}` placeholders ("Refund order {order_id}"), linked to the action that
+  completes it. `atlas_find_skills` matches goals by their words.
+- **Skill.** A multi-step route that several distinct runs completed end to end, compressed into one
+  hop. The planner crosses it in a single step, so a proven route costs less than its parts.
+- **Resolved entity.** A typed key (for example `order_id` 1042) and the action where it was last seen.
+  `atlas_recall` returns the page.
+- **Change event.** A known step that stopped leading where the map said. The edge is penalised, plans
+  route around it, and if the same action was seen to lead elsewhere the replacement is recorded.
+- **Namespace.** The isolated map that belongs to one key.
+
+## Potential use cases
+
+- **Agent fleets.** Many browser instances working the same sites: one learns a route, all of them plan
+  with it.
+- **Back-office automation.** Refunds, lookups and status updates in admin tools without an API; routes
+  are stored with placeholders so they serve any record.
+- **Lower context cost.** Replace preloaded site notes and long tool lists with four tools and
+  on-demand graph traversal.
+- **Regression watch.** Run known routes on a schedule and read `atlas://site/{site}/changes` to see
+  which control on which page stopped working.
+- **Bootstrapping from history.** Import existing agent traces so a new deployment starts with a map.
+
+## Links
+
+- Overview: https://atlas.yashdynamo.fun/
+- Playground: https://atlas.yashdynamo.fun/playground.html
+- Docs: https://atlas.yashdynamo.fun/docs/
+- Short version of this file: https://atlas.yashdynamo.fun/llms.txt

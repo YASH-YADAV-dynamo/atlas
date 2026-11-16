@@ -1,0 +1,237 @@
+# Atlas
+
+**The route-planning layer for browser agents: steps the map already knows run with zero model calls.**
+
+Atlas is a route-planning and context layer for browser agents, built on HydraDB. It plans routes over the sites it has mapped, and it asks a model to explore only where the map ends.
+
+![HydraDB](https://img.shields.io/badge/graph%20store-HydraDB-0a7ea4)
+![Python 3.12](https://img.shields.io/badge/python-3.12-3776ab)
+![MCP](https://img.shields.io/badge/MCP-server-000000)
+
+**Try it live: <https://hydradb.yashdynamo.fun>** (a self-hosted synthetic test site)
+
+### Why it matters
+
+- **Known steps cost no model calls.** Atlas keeps what agents learn about a site as a graph in HydraDB and
+  plans each task as one weighted shortest-path query. The model is asked only where the map ends.
+
+## How it works
+
+```mermaid
+flowchart LR
+    L[Locate<br/>page becomes a state] --> P[Plan<br/>HydraDB weighted shortest path]
+    P -->|route found| D[Drive known steps<br/>zero model calls]
+    P -->|map ends| X[Explore at the frontier<br/>model picks one action]
+    D -->|step fails| R[Self-repair<br/>penalise edge, replan]
+    R --> P
+    D -->|each step| REP[Report outcome]
+    X --> REP
+    REP --> M[Map improves<br/>counts and costs in HydraDB]
+    M -.->|next agent| L
+    S[Sleep phase<br/>repeated paths become skills] -.->|skill = one hop| P
+```
+
+Edge cost is `-ln((ok + 1) / (ok + fail + 2)) + ms / 10000`, so reliable, fast edges are cheap. Task values
+such as an order number are stored as `{slot}` placeholders, so a route learned for one order serves any
+other. Details: [docs/architecture.md](docs/architecture.md).
+
+## Use it
+
+### MCP server
+
+Runner mode: Atlas drives a browser session for the agent.
+
+| Tool | Purpose |
+|---|---|
+| `atlas_find_skills` | Goals and skills the map can already drive for this site |
+| `atlas_run` | Start a goal; drives known steps, returns choices where the map ends |
+| `atlas_act` | Take one offered choice, or report that the goal is reached |
+| `atlas_recall` | Recall known entities (for example an order) and plan to them |
+
+Planner mode (`MCP_MODE=planner`) is for agents that already have a browser tool; it adds `atlas_plan` and
+`atlas_report`. Responses are capped at 400 tokens and never contain HTML or a full accessibility tree.
+
+Claude Desktop, Cursor and other stdio clients: run `python` from an environment where `atlas` is installed
+(the project's `.venv`).
+
+```json
+{
+  "mcpServers": {
+    "atlas": {
+      "command": "python",
+      "args": ["-m", "atlas.mcp"],
+      "env": {
+        "MCP_MODE": "runner",
+        "MCP_SITE": "testmart",
+        "TESTMART_URL": "http://127.0.0.1:8100",
+        "HYDRADB_URL": "bolt://127.0.0.1:7687",
+        "HYDRADB_TOKEN": "<your HydraDB token>"
+      }
+    }
+  }
+}
+```
+
+Streamable HTTP instead (requires `ATLAS_API_KEY`, sent as a bearer token):
+
+```bash
+python -m atlas.mcp --http --host 127.0.0.1 --port 8200   # endpoint: http://127.0.0.1:8200/mcp
+```
+
+### Route API
+
+Stateless HTTP with a bearer key. The integration is three calls, shown against a local API:
+
+```bash
+API=http://127.0.0.1:8000
+AUTH="Authorization: Bearer $ATLAS_API_KEY"
+
+# 1. where am I? (snapshot = URL plus interactive elements as role and name)
+curl -s -X POST $API/v1/locate -H "$AUTH" -H "Content-Type: application/json" -d '{
+  "site": "testmart",
+  "snapshot": {"url": "http://127.0.0.1:8100/orders", "elements": [{"role": "link", "name": "Orders"}]}}'
+# -> {"state_id": ..., "known": true}
+
+# 2. cheapest known route to the goal (state_id from step 1)
+curl -s -X POST $API/v1/plan -H "$AUTH" -H "Content-Type: application/json" -d '{
+  "site": "testmart", "state_id": <state_id>,
+  "goal_text": "Refund order 1042", "params": {"order_id": "1042"}}'
+# -> {"route": [...], "confidence": ..., "needs_model": false, "reason": ...}
+
+# 3. report what happened after one action
+curl -s -X POST $API/v1/report -H "$AUTH" -H "Content-Type: application/json" -d '{
+  "site": "testmart", "from_state": <state_id>,
+  "action": {"kind": "click", "locator": {"role": "link", "name": "Orders"}},
+  "to_snapshot": {"url": "http://127.0.0.1:8100/orders", "title": "Orders", "elements": []},
+  "ok": true, "ms": 120, "event_id": "run-1-step-0"}'
+```
+
+An empty `route` with `"needs_model": true` means you are at the edge of the map: explore one step, report
+it, and plan again. Also: `GET /v1/map/{site}`, `GET /v1/changes?site=`, `GET /v1/skills?site=`,
+`POST /v1/sleep?site=`, `GET /healthz`. Models: `atlas/contracts/api_models.py`.
+
+### Python SDK
+
+```bash
+pip install ./sdk
+```
+
+```python
+from atlas_sdk import Atlas
+
+atlas = Atlas("http://127.0.0.1:8000", api_key, site="testmart")
+summary = atlas.session(driver).run("Refund order 1042", {"order_id": "1042"}, fallback=my_agent_step)
+print(summary)  # RunSummary(success=True, steps=5, map_steps=5, fallback_calls=0)
+```
+
+`driver` provides `snapshot()` and `act(action)`. `fallback` is your own agent step, called only where the
+map ends. See [sdk/README.md](sdk/README.md) and [sdk/example.py](sdk/example.py).
+
+### Trace import
+
+Recorded agent runs become a map without re-exploring. One `TraceStep` JSON object per line:
+
+```bash
+ATLAS_API_URL=http://127.0.0.1:8000 ATLAS_API_KEY=<your key> python -m atlas.import_trace runs.jsonl
+```
+
+The whole file is validated before anything is imported. Schema and `TraceRecorder`:
+[docs/trace-import.md](docs/trace-import.md).
+
+## Results
+
+Measured on our self-hosted TestMart benchmark: a synthetic back-office app that we run ourselves.
+Success is always the application's own database check, never the agent's belief. Method, arms and prices:
+[docs/benchmark.md](docs/benchmark.md).
+
+The only run so far is `smoke-deepseek-20261115`: a smoke benchmark, one seed, DeepSeek model
+(`deepseek-flash`), 240 task records, $0.98 spent, not partial. Every number below is copied from
+`results/smoke-deepseek-20261115/`.
+
+**Arms.** B0: plain model-driven agent, no memory. B1: trajectory cache keyed by task template. A: Atlas
+(in-memory map in this run). M0: an MCP client with browser tools only. M1: the same plus the Atlas MCP server.
+
+### Held-out tasks, last iteration (10 tasks per arm)
+
+Smoke benchmark, one seed, DeepSeek model.
+
+| Arm | Held-out success | Model calls per success | Tokens per success | Zero-model-call share | Wall time p50 / p95 |
+|---|---|---|---|---|---|
+| B0 no memory | 7/10 | 10.6 | 18,195 | 0% | 5.3 s / 61.6 s |
+| B1 trajectory cache | 9/10 | 2.0 | 3,364 | 60% | 0.4 s / 14.6 s |
+| A Atlas | 6/10 | 1.2 | 1,966 | 20% | 1.4 s / 23.8 s |
+
+Over all three held-out iterations (30 tasks per arm): B0 21/30, B1 25/30, A 19/30. Atlas scored 5/10, 8/10
+and 6/10 by iteration. In the last iteration Atlas used the fewest model calls per successful task; across the
+three iterations it did not, and the trajectory cache had the highest held-out success.
+
+### Learning curves and baselines
+
+Smoke benchmark, one seed, DeepSeek model.
+
+![Held-out success per iteration](results/smoke-deepseek-20261115/heldout_success.png)
+
+![Model calls and tokens per successful task, held-out tasks](results/smoke-deepseek-20261115/cost_heldout.png)
+
+### Tool calls and context per task (M0 vs M1, stream tasks)
+
+Smoke benchmark, one seed, DeepSeek model. Means over the three stream iterations (30 tasks per arm).
+
+| | Tool calls per task | Context tokens per task | Success | Wall time p50 |
+|---|---|---|---|---|
+| M0 browser tools only | 10.4 | 1,470 | 30/30 | 18.7 s |
+| M1 with Atlas MCP | 12.3 | 2,495 | 28/30 | 11.8 s |
+
+M1 did not reduce tool calls or context tokens; in this run it used more of both.
+
+![Tool calls and context tokens per task, M0 and M1](results/smoke-deepseek-20261115/mcp_round_trips_context.png)
+
+**What this run does and does not show.** It shows how often each arm finished these tasks and what each
+success cost in model calls and tokens, on one seed with 10 tasks per cell, where a gap of one or two tasks
+is noise. It does not show that Atlas beats a plain agent or a trajectory cache on success, and it does not
+show that the Atlas MCP server saves tool calls or context. Model errors ended 42 of the 180 B0, B1 and A
+tasks (the model's reply could not be used); those count as failures.
+
+## Run locally
+
+Requirements: Docker (with Compose) and Python 3. Three commands:
+
+```bash
+git clone https://github.com/YASH-YADAV-dynamo/atlas.git && cd atlas
+python scripts/setup.py          # writes .env and the HydraDB token with fresh random secrets
+docker compose up -d --build     # HydraDB, the TestMart demo site and the Atlas API
+```
+
+Open <http://localhost:8000>. The MCP server is at `http://localhost:8000/mcp`; create a key with
+`curl -s -X POST http://localhost:8000/v1/keys`. Port 8000 taken? `ATLAS_PORT=8010 docker compose up -d`.
+
+Planning, reporting and MCP work without any model key. To let agents explore pages the map does not
+know yet, put a model key in `.env` (`MODEL_PROVIDER`, `MODEL_API_KEY`, `ATLAS_MODEL_ID`; any
+OpenAI-compatible provider works) and run `docker compose up -d` again. Spend is capped by `MODEL_BUDGET_USD`.
+
+Stop with `docker compose down` (add `-v` to wipe the map).
+
+### Develop
+
+Requirements: Python 3.12 or 3.13, GNU make.
+
+```bash
+make setup        # .venv, pinned dependencies, Chromium
+make check        # lint, types, unit and contract tests
+make test-int     # the store contract against real HydraDB (needs the stack above running)
+```
+
+## Architecture
+
+- **Core** (`atlas/core/`): pure logic, no I/O. **Ports** (`atlas/contracts/`): types, API and MCP models,
+  and the store, browser and model interfaces.
+- **Adapters** (`atlas/adapters/`): `hydradb` (all Cypher in `queries.py`), local Playwright, the model.
+- **Surfaces**: Route API (`atlas/api/`), MCP (`atlas/mcp/`), runner (`atlas/runner/`), SDK (`sdk/`), demo (`web/`).
+
+Full design: [docs/architecture.md](docs/architecture.md). Decisions: [docs/adr/](docs/adr/).
+
+## License
+
+MIT, see [LICENSE](LICENSE). HydraDB is used unmodified as a separate service under its own licence.
+
+HydraDB: <https://github.com/hydra-db/hydradb>.

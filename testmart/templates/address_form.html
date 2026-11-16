@@ -1,0 +1,11 @@
+{% extends "base.html" %}
+{% block title %}Edit address{% endblock %}
+{% block heading %}Edit address for {{ customer.name }}{% endblock %}
+{% block content %}
+{% if error %}<p class="alert" role="alert">{{ error }}</p>{% endif %}
+<form method="post" action="/customers/{{ customer.id }}/address">
+  <label for="address">Shipping address</label>
+  <input id="address" name="address" type="text" size="60" maxlength="200" value="{{ customer.address }}" required>
+  <p><button type="submit">Save address</button> <a href="/customers/{{ customer.id }}">Cancel</a></p>
+</form>
+{% endblock %}

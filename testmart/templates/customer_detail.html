@@ -1,0 +1,13 @@
+{% extends "base.html" %}
+{% block title %}Customer details{% endblock %}
+{% block heading %}Customer {{ customer.name }}{% endblock %}
+{% block content %}
+<dl>
+  <dt>Email</dt><dd>{{ customer.email }}</dd>
+  <dt>Shipping address</dt><dd>{{ customer.address }}</dd>
+</dl>
+<p>
+  <a href="/customers/{{ customer.id }}/address">Edit address</a>
+  <a href="/customers">Back to customers</a>
+</p>
+{% endblock %}

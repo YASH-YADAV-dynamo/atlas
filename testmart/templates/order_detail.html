@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% block title %}Order details{% endblock %}
+{% block heading %}Order {{ order.number }}{% endblock %}
+{% block content %}
+<dl>
+  <dt>Status</dt><dd>{{ order.status }}</dd>
+  <dt>Customer</dt><dd>{{ order.customer_name }}</dd>
+  <dt>Product</dt><dd>{{ order.product_name }} x {{ order.quantity }}</dd>
+  <dt>Total</dt><dd>{{ order.total_cents|money }}</dd>
+</dl>
+<p>
+  {% if order.status != "Refunded" %}{% if ui_version == 2 %}<a href="/orders/{{ order.id }}/refund">Issue refund</a>{% elif ui_version == 3 %}<a href="/orders/{{ order.id }}/refund/review">Refund order</a>{% else %}<a href="/orders/{{ order.id }}/refund">Refund order</a>{% endif %}{% endif %}
+  <a href="/customers/{{ order.customer_id }}">View customer</a>
+  <a href="/orders">Back to orders</a>
+</p>
+{% endblock %}
