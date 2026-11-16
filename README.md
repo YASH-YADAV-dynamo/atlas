@@ -163,10 +163,6 @@ same model (DeepSeek `deepseek-flash`). Success is checked on the landing URL.
 
 - **Python SDK, known goal, new topic:** 0 model calls in 19 of 19 runs after the first learning run, about
   3.8 s against 9 s for the plain agent. Success 19/20 for both.
-- **MCP research, exact repeat:** 1 model call instead of 3.5 (median) and 4.9 s against 7.9 s, with the same
-  success rate as the plain agent (10/10).
-- **Early and improving.** Atlas is young: every run teaches it more of a site, and we ship fixes against live
-  runs daily.
 
 ## Run locally
 
